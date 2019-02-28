@@ -3,8 +3,8 @@ import numpy as np
 # Note: actions are tuples of change in (x, y) position
 ACTIONS = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]
 
-# Note: earn this reward in every period (undiscounted) until objective is reached
-# Goal is to reach the objective (target location) as fast as possible
+# Note: earn this reward in every period until objective is reached (which ends the episode)
+# With a negative reward, the goal is to reach the objective (target location) as fast as possible
 REWARD = -1
 
 
