@@ -1,26 +1,22 @@
 import numpy as np
 
 # Note: actions are tuples of change in (x, y) position
-ACTIONS = [
-    (0, 0),
-    (-1, 0),
-    (1, 0),
-    (0, -1),
-    (0, 1),
-]
+ACTIONS = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]
 
 # Note: earn this reward in every period (undiscounted) until objective is reached
 # Goal is to reach the objective (target location) as fast as possible
 REWARD = -1
 
+
 def is_valid_probability(x):
-    return 0.0 <= x <= 1.0, 'Probabilities must be between 0 and 1 (inclusive)'
+    return 0.0 <= x <= 1.0, "Probabilities must be between 0 and 1 (inclusive)"
+
 
 def is_valid_discount_factor(x):
-    return 0.0 < x < 1.0, 'Discount factor must be between 0 and 1 (exclusive)'
+    return 0.0 < x < 1.0, "Discount factor must be between 0 and 1 (exclusive)"
+
 
 class WindyGridworld:
-
     def __init__(
         self,
         width=8,
@@ -96,7 +92,9 @@ class WindyGridworld:
             for y in range(height):
 
                 action = tuple(self.policy[x, y])
-                assert action in ACTIONS, "Uh oh! There's an invalid action in the policy function"
+                assert (
+                    action in ACTIONS
+                ), "Uh oh! There's an invalid action in the policy function"
 
                 # Note: this uses self.value, i.e. the value function from the previous iteration,
                 # in addition to the policy function
@@ -121,7 +119,10 @@ class WindyGridworld:
         for x in range(width):
             for y in range(height):
 
-                candidate_values = [self.get_updated_value_at_location(x, y, action) for action in ACTIONS]
+                candidate_values = [
+                    self.get_updated_value_at_location(x, y, action)
+                    for action in ACTIONS
+                ]
 
                 optimal_action = ACTIONS[np.argmax(candidate_values)]
 
@@ -141,6 +142,7 @@ class WindyGridworld:
 
             self.policy = updated_policy
 
+
 def main():
 
     gridworld = WindyGridworld()
@@ -150,5 +152,6 @@ def main():
     print(gridworld.policy)
     print(gridworld.value)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
