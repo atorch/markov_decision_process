@@ -1,4 +1,7 @@
 import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+
 
 # Note: actions are tuples of change in (x, y) position, i.e. (dx, dy)
 # Valid actions are stay, left, right, down, up
@@ -23,12 +26,12 @@ def is_valid_discount_factor(x):
 class WindyGridworld:
     def __init__(
         self,
-        width=8,
-        height=10,
+        width=10,
+        height=12,
         target_xy=[6, 8],
-        obstacle_xy=[5, 8],
+        obstacles_xy=[[5, 8], [6, 6]],
         pr_wind_up=0.1,
-        pr_wind_down=0.0,
+        pr_wind_down=0.2,
         windy_columns=[2, 3, 4],
         discount=0.90,
     ):
@@ -44,13 +47,18 @@ class WindyGridworld:
 
         assert np.isclose(self.pr_wind_up + self.pr_wind_stay + self.pr_wind_down, 1.0)
 
+        # Note: make sure target location is inside grid
         assert 0 <= target_xy[0] < width
         assert 0 <= target_xy[1] < height
+
         self.target_x, self.target_y = target_xy
 
-        assert 0 <= obstacle_xy[0] < width
-        assert 0 <= obstacle_xy[1] < height
-        self.obstacle_x, self.obstacle_y = obstacle_xy
+        for obstacle_xy in obstacles_xy:
+            # Note: make sure each obstacle location is inside grid
+            assert 0 <= obstacle_xy[0] < width
+            assert 0 <= obstacle_xy[1] < height
+
+        self.obstacles_xy = obstacles_xy
 
         assert all([0 <= column_index < width for column_index in windy_columns])
 
@@ -71,7 +79,12 @@ class WindyGridworld:
 
     def is_obstacle_location(self, x, y):
 
-        return x == self.obstacle_x and y == self.obstacle_y
+        return any(
+            [
+                x == obstacle_xy[0] and y == obstacle_xy[1]
+                for obstacle_xy in self.obstacles_xy
+            ]
+        )
 
     def get_x_y_next(self, x, y, action):
 
@@ -182,6 +195,21 @@ class WindyGridworld:
 
             self.policy = updated_policy
 
+    def save_value_function_plot(self, outfile):
+        fig, ax = plt.subplots()
+
+        # Note: imshow puts first index along vertical axis,
+        # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
+        im = ax.imshow(np.transpose(self.value), origin="lower")
+
+        cbar = ax.figure.colorbar(im, ax=ax)
+        cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
+
+        plt.xlabel("x")
+        plt.ylabel("y")
+
+        plt.savefig(outfile)
+
 
 def main():
 
@@ -189,7 +217,10 @@ def main():
 
     gridworld.run_policy_iteration()
 
-    print(gridworld.policy)
+    # TODO Could be instructive to plot value function on each iteration and make a gif
+    gridworld.save_value_function_plot("value_function.png")
+
+    # TODO Plot policy function
 
 
 if __name__ == "__main__":
