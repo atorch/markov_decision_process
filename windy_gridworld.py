@@ -6,7 +6,10 @@ ACTIONS = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]
 
 # Note: earn this reward in every period until objective is reached (which ends the episode)
 # With a negative reward, the goal is to reach the objective (target location) as fast as possible
-REWARD = -1
+REWARD_DEFAULT = -1
+
+# Note: certain locations can be "obstacles" which are passable but very costly
+REWARD_OBSTACLE = -10
 
 
 def is_valid_probability(x):
@@ -22,8 +25,8 @@ class WindyGridworld:
         self,
         width=8,
         height=10,
-        target_x=6,
-        target_y=8,
+        target_xy=[6, 8],
+        obstacle_xy=[5, 8],
         pr_wind_up=0.1,
         pr_wind_down=0.0,
         windy_columns=[2, 3, 4],
@@ -41,11 +44,13 @@ class WindyGridworld:
 
         assert np.isclose(self.pr_wind_up + self.pr_wind_stay + self.pr_wind_down, 1.0)
 
-        assert 0 <= target_x < width
-        assert 0 <= target_y < height
+        assert 0 <= target_xy[0] < width
+        assert 0 <= target_xy[1] < height
+        self.target_x, self.target_y = target_xy
 
-        self.target_x = target_x
-        self.target_y = target_y
+        assert 0 <= obstacle_xy[0] < width
+        assert 0 <= obstacle_xy[1] < height
+        self.obstacle_x, self.obstacle_y = obstacle_xy
 
         assert all([0 <= column_index < width for column_index in windy_columns])
 
@@ -62,9 +67,11 @@ class WindyGridworld:
 
     def is_target_location(self, x, y):
 
-        width, height = self.value.shape
-
         return x == self.target_x and y == self.target_y
+
+    def is_obstacle_location(self, x, y):
+
+        return x == self.obstacle_x and y == self.obstacle_y
 
     def get_x_y_next(self, x, y, action):
 
@@ -101,7 +108,12 @@ class WindyGridworld:
 
             continuation_value += probability * self.value[x_next, y_next]
 
-        return REWARD + self.discount * continuation_value
+        reward = REWARD_DEFAULT
+
+        if self.is_obstacle_location(x, y):
+            reward = REWARD_OBSTACLE
+
+        return reward + self.discount * continuation_value
 
     def get_updated_value_function(self):
 
