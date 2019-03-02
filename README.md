@@ -7,3 +7,5 @@ Examples of Markov Decision Processes (MDPs)
 [windy_gridworld.py](windy_gridworld.py)
 
 This problem is loosely based on example 6.5 in Reinforcement Learning (second edition) by Sutton and Barto.
+
+![Value Function](value_function.png)
