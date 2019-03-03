@@ -201,6 +201,8 @@ class WindyGridworld:
         plt.xlabel("x")
         plt.ylabel("y")
 
+        plt.title("Value Function")
+
         plt.savefig(outfile)
 
     def save_policy_function_plot(self, outfile):
@@ -224,6 +226,11 @@ class WindyGridworld:
 
         plt.xlabel("x")
         plt.ylabel("y")
+
+        plt.title("Policy Function")
+
+        # TODO Add legend -- maybe combine value and policy function into single png,
+        # and make them the same width and height so that they're easy to compare visually?
 
         plt.savefig(outfile)
 
