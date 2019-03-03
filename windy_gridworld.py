@@ -32,7 +32,6 @@ class WindyGridworld:
         obstacles_xy=[[5, 8], [6, 6]],
         pr_wind_up=0.1,
         pr_wind_down=0.2,
-        windy_columns=[2, 3, 4],
         discount=0.90,
     ):
 
@@ -59,10 +58,6 @@ class WindyGridworld:
             assert 0 <= obstacle_xy[1] < height
 
         self.obstacles_xy = obstacles_xy
-
-        assert all([0 <= column_index < width for column_index in windy_columns])
-
-        self.windy_columns = windy_columns
 
         assert is_valid_discount_factor(discount)
 
@@ -106,8 +101,6 @@ class WindyGridworld:
             return 0.0
 
         continuation_value = 0.0
-
-        # TODO Wind for windy columns only!
 
         for probability, dy_from_wind in [
             (self.pr_wind_up, 1),
@@ -210,6 +203,30 @@ class WindyGridworld:
 
         plt.savefig(outfile)
 
+    def save_policy_function_plot(self, outfile):
+        fig, ax = plt.subplots()
+
+        width, height = self.value.shape
+        x, y = np.meshgrid(np.arange(width), np.arange(height), indexing="ij")
+
+        ax.quiver(
+            x.flatten(),
+            y.flatten(),
+            self.policy[:, :, 0].flatten(),
+            self.policy[:, :, 1].flatten(),
+        )
+
+        plt.plot(self.target_x, self.target_y, color="forestgreen", marker="o")
+
+        for obstacle_xy in self.obstacles_xy:
+
+            plt.plot(obstacle_xy[0], obstacle_xy[1], color="firebrick", marker="x")
+
+        plt.xlabel("x")
+        plt.ylabel("y")
+
+        plt.savefig(outfile)
+
 
 def main():
 
@@ -220,7 +237,7 @@ def main():
     # TODO Could be instructive to plot value function on each iteration and make a gif
     gridworld.save_value_function_plot("value_function.png")
 
-    # TODO Plot policy function
+    gridworld.save_policy_function_plot("policy_function.png")
 
 
 if __name__ == "__main__":
