@@ -188,7 +188,7 @@ class WindyGridworld:
 
             self.policy = updated_policy
 
-    def save_value_function_plot(self, outfile):
+    def save_value_and_policy_function_plot(self, outfile):
         fig, ax = plt.subplots()
 
         # Note: imshow puts first index along vertical axis,
@@ -197,16 +197,6 @@ class WindyGridworld:
 
         cbar = ax.figure.colorbar(im, ax=ax)
         cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
-
-        plt.xlabel("x")
-        plt.ylabel("y")
-
-        plt.title("Value Function")
-
-        plt.savefig(outfile)
-
-    def save_policy_function_plot(self, outfile):
-        fig, ax = plt.subplots()
 
         width, height = self.value.shape
         x, y = np.meshgrid(np.arange(width), np.arange(height), indexing="ij")
@@ -218,19 +208,22 @@ class WindyGridworld:
             self.policy[:, :, 1].flatten(),
         )
 
-        plt.plot(self.target_x, self.target_y, color="forestgreen", marker="o")
+        plt.plot(self.target_x, self.target_y, color="black", marker="x")
 
         for obstacle_xy in self.obstacles_xy:
 
-            plt.plot(obstacle_xy[0], obstacle_xy[1], color="firebrick", marker="x")
+            plt.plot(
+                obstacle_xy[0],
+                obstacle_xy[1],
+                color="firebrick",
+                fillstyle="none",
+                marker="o",
+            )
 
         plt.xlabel("x")
         plt.ylabel("y")
 
-        plt.title("Policy Function")
-
-        # TODO Add legend -- maybe combine value and policy function into single png,
-        # and make them the same width and height so that they're easy to compare visually?
+        plt.title("Value and Policy Functions")
 
         plt.savefig(outfile)
 
@@ -241,10 +234,7 @@ def main():
 
     gridworld.run_policy_iteration()
 
-    # TODO Could be instructive to plot value function on each iteration and make a gif
-    gridworld.save_value_function_plot("value_function.png")
-
-    gridworld.save_policy_function_plot("policy_function.png")
+    gridworld.save_value_and_policy_function_plot("value_and_policy_functions.png")
 
 
 if __name__ == "__main__":

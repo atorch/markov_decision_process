@@ -8,6 +8,4 @@ Examples of Markov Decision Processes (MDPs)
 
 This problem is loosely based on example 6.5 in Reinforcement Learning (second edition) by Sutton and Barto.
 
-![Value Function](value_function.png)
-
-![Policy Function](policy_function.png)
+![Value and Policy Functions](value_and_policy_functions.png)
