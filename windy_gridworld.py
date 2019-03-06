@@ -230,7 +230,47 @@ class WindyGridworld:
 
         return x_next, y_next
 
-    def run_sarsa(self, step_size=0.1, n_episodes=20000):
+    def run_q_learning(self, step_size=0.1, n_episodes=100_000, epsilon=0.01):
+
+        # Note: Q[x, y, idx] is the value of location (x, y) conditional on taking action ACTIONS[idx]
+        self.Q = np.zeros((self.width, self.height, len(ACTIONS)))
+
+        for episode in range(n_episodes):
+
+            if episode % 1000 == 0:
+                print(f"Q-learning episode {episode}")
+
+            x, y = self.get_random_xy()
+
+            while not self.is_target_location(x, y):
+
+                # Note: this uses self.Q
+                action, action_idx = self.get_epsilon_greedy_action(x, y, epsilon)
+
+                x_next, y_next = self.simulate_xy_next(x, y, action)
+
+                Q_next = np.max(self.Q[x_next, y_next])
+
+                reward = self.get_reward(x, y)
+
+                self.Q[x, y, action_idx] += step_size * (
+                    reward + self.discount * Q_next - self.Q[x, y, action_idx]
+                )
+
+                x, y = (x_next, y_next)
+
+        # TODO Is np.max(self.Q, axis=2) a biased estimate of the value function?
+        self.value_q_learning = np.max(self.Q, axis=2)
+
+        self.policy_q_learning = np.zeros((self.width, self.height, 2), dtype=int)
+
+        # TODO This is duplicated in SARSA code, make it a function
+        for x in range(self.width):
+            for y in range(self.height):
+
+                self.policy_q_learning[x, y] = ACTIONS[np.argmax(self.Q[x, y])]
+
+    def run_sarsa(self, step_size=0.1, n_episodes=100_000):
 
         # Note: Q[x, y, idx] is the value of location (x, y) conditional on taking action ACTIONS[idx]
         self.Q = np.zeros((self.width, self.height, len(ACTIONS)))
@@ -276,16 +316,9 @@ class WindyGridworld:
 
                 self.policy_sarsa[x, y] = ACTIONS[np.argmax(self.Q[x, y])]
 
-    def save_value_and_policy_function_plot(self, outfile, use_sarsa_results=False):
+    def save_value_and_policy_function_plot(self, value, policy, outfile):
+
         fig, ax = plt.subplots()
-
-        if use_sarsa_results:
-            value = self.value_sarsa
-            policy = self.policy_sarsa
-
-        else:
-            value = self.value
-            policy = self.policy
 
         # Note: imshow puts first index along vertical axis,
         # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
@@ -328,11 +361,22 @@ def main():
     gridworld = WindyGridworld()
 
     gridworld.run_policy_iteration()
-    gridworld.save_value_and_policy_function_plot("value_and_policy_functions.png")
+    gridworld.save_value_and_policy_function_plot(
+        gridworld.value, gridworld.policy, "value_and_policy_functions.png"
+    )
+
+    gridworld.run_q_learning()
+    gridworld.save_value_and_policy_function_plot(
+        gridworld.value_q_learning,
+        gridworld.policy_q_learning,
+        "value_and_policy_functions_q_learning.png",
+    )
 
     gridworld.run_sarsa()
     gridworld.save_value_and_policy_function_plot(
-        "value_and_policy_functions_sarsa.png", use_sarsa_results=True
+        gridworld.value_sarsa,
+        gridworld.policy_sarsa,
+        "value_and_policy_functions_sarsa.png",
     )
 
 
