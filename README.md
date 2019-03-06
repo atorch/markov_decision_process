@@ -21,13 +21,14 @@ target in as few moves as possible.
 
 There are two complications that make the problem interesting:
 
-* Certain positions are "passable obstacles" (denote by a
-red X in the image above), and these are very costly (the
+* Certain positions are "passable obstacles" (denote by
+red circles in the image above), and these are very costly (the
 reward is -10; you can imagine the agent getting "stuck" for
 10 moves if they walk into one of these locations).
 * There is random "wind" in the up-down direction (y axis),
 which sometimes pushes the agent either up or down beyond their
 intended move. This means the agent might be pushed into a
-costly obstacle. Notice that the optimal policy (black arrows
-in the figure above) involves circumventing the obstacles by a
-wide margin in the y direction.
+costly obstacle if they are either directly above or beneath it.
+Notice that the optimal policy (black arrows in the figure above)
+involves circumventing the obstacles by a wide margin in the
+y direction.
