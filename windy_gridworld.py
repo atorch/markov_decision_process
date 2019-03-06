@@ -14,6 +14,9 @@ REWARD_DEFAULT = -1
 # Note: certain locations can be "obstacles" which are passable but very costly
 REWARD_OBSTACLE = -10
 
+# Note: the problem ends when the agent reaches the target
+REWARD_TARGET = 0
+
 
 def is_valid_probability(x):
     return 0.0 <= x <= 1.0, "Probabilities must be between 0 and 1 (inclusive)"
@@ -34,11 +37,12 @@ class WindyGridworld:
         pr_wind_down=0.2,
         discount=0.90,
     ):
-
         assert is_valid_probability(pr_wind_down)
         assert is_valid_probability(pr_wind_up)
 
         pr_wind_stay = 1.0 - pr_wind_down - pr_wind_up
+
+        assert is_valid_probability(pr_wind_stay)
 
         self.pr_wind_up = pr_wind_up
         self.pr_wind_stay = pr_wind_stay
@@ -63,10 +67,8 @@ class WindyGridworld:
 
         self.discount = discount
 
-        self.value = np.zeros((width, height))
-
-        # Note: policy[:, :, 0] is movement in x dimension, and policy[:, :, 1] is movement in y dimension
-        self.policy = np.zeros((width, height, 2), dtype=int)
+        self.width = width
+        self.height = height
 
     def is_target_location(self, x, y):
 
@@ -81,17 +83,25 @@ class WindyGridworld:
             ]
         )
 
-    def get_x_y_next(self, x, y, action):
+    def get_xy_next(self, x, y, action_plus_wind):
 
-        x_next, y_next = (x + action[0], y + action[1])
-
-        width, height = self.value.shape
+        x_next, y_next = (x + action_plus_wind[0], y + action_plus_wind[1])
 
         # Note: this prevents the next (x, y) location from being outside of the grid
-        x_next = min(max(x_next, 0), width - 1)
-        y_next = min(max(y_next, 0), height - 1)
+        x_next = min(max(x_next, 0), self.width - 1)
+        y_next = min(max(y_next, 0), self.height - 1)
 
         return x_next, y_next
+
+    def get_reward(self, x, y):
+
+        if self.is_target_location(x, y):
+            return REWARD_TARGET
+
+        if self.is_obstacle_location(x, y):
+            return REWARD_OBSTACLE
+
+        return REWARD_DEFAULT
 
     def get_updated_value_at_location(self, x, y, action):
 
@@ -107,17 +117,13 @@ class WindyGridworld:
             (self.pr_wind_stay, 0),
             (self.pr_wind_down, -1),
         ]:
-
-            # Note: wind randomly modifies action's vertical (y) movement
+            # Note: wind randomly modifies action's vertical (y-axis) movement
             action_plus_wind = (action[0], action[1] + dy_from_wind)
-            x_next, y_next = self.get_x_y_next(x, y, action_plus_wind)
+            x_next, y_next = self.get_xy_next(x, y, action_plus_wind)
 
             continuation_value += probability * self.value[x_next, y_next]
 
-        reward = REWARD_DEFAULT
-
-        if self.is_obstacle_location(x, y):
-            reward = REWARD_OBSTACLE
+        reward = self.get_reward(x, y)
 
         return reward + self.discount * continuation_value
 
@@ -125,10 +131,8 @@ class WindyGridworld:
 
         updated_value = self.value.copy()
 
-        width, height = self.value.shape
-
-        for x in range(width):
-            for y in range(height):
+        for x in range(self.width):
+            for y in range(self.height):
 
                 action = tuple(self.policy[x, y])
                 assert (
@@ -153,10 +157,8 @@ class WindyGridworld:
 
         updated_policy = self.policy.copy()
 
-        width, height = self.value.shape
-
-        for x in range(width):
-            for y in range(height):
+        for x in range(self.width):
+            for y in range(self.height):
 
                 candidate_values = [
                     self.get_updated_value_at_location(x, y, action)
@@ -171,6 +173,11 @@ class WindyGridworld:
 
     def run_policy_iteration(self, max_iterations=50, verbose=True):
 
+        self.value = np.zeros((self.width, self.height))
+
+        # Note: policy[:, :, 0] is movement in x dimension, and policy[:, :, 1] is movement in y dimension
+        self.policy = np.zeros((self.width, self.height, 2), dtype=int)
+
         for iteration in range(max_iterations):
 
             # Note: solve for the value function given the previous policy
@@ -182,30 +189,118 @@ class WindyGridworld:
             # Note: given the updated value function, find the optimal policy
             updated_policy = self.get_updated_policy_function()
 
+            # Note: PDF of Sutton and Barto's Reinforcement Learning warns that
+            # "this may never terminate if the policy continually switches
+            #  between two or more policies that are equally good",
+            # in which case this function will run until max_iterations
+            # TODO Why was that note removed from the published text?
             if np.all(self.policy == updated_policy):
                 print(f"Policy function converged after {iteration} iteration(s)")
                 break
 
             self.policy = updated_policy
 
-    def save_value_and_policy_function_plot(self, outfile):
+    def get_random_xy(self):
+
+        x = np.random.choice(range(self.width))
+        y = np.random.choice(range(self.height))
+
+        return x, y
+
+    def get_epsilon_greedy_action(self, x, y, epsilon):
+
+        random_uniform = np.random.uniform()
+
+        if random_uniform < epsilon:
+            action_idx = np.random.choice(range(len(ACTIONS)))
+
+        else:
+            action_idx = np.argmax(self.Q[x, y])
+
+        return ACTIONS[action_idx], action_idx
+
+    def simulate_xy_next(self, x, y, action):
+
+        dy_from_wind = np.random.choice(
+            [1, 0, -1], p=[self.pr_wind_up, self.pr_wind_stay, self.pr_wind_down]
+        )
+
+        action_plus_wind = (action[0], action[1] + dy_from_wind)
+        x_next, y_next = self.get_xy_next(x, y, action_plus_wind)
+
+        return x_next, y_next
+
+    def run_sarsa(self, step_size=0.1, n_episodes=20000):
+
+        # Note: Q[x, y, idx] is the value of location (x, y) conditional on taking action ACTIONS[idx]
+        self.Q = np.zeros((self.width, self.height, len(ACTIONS)))
+
+        for episode in range(n_episodes):
+
+            if episode % 1000 == 0:
+                print(f"SARSA episode {episode}")
+
+            # Note: this makes get_epsilon_greedy_action return the greedy (optimal) action in the limit
+            epsilon = 1.0 / (episode + 1)
+
+            x, y = self.get_random_xy()
+
+            # Note: this uses self.Q
+            action, action_idx = self.get_epsilon_greedy_action(x, y, epsilon)
+
+            while not self.is_target_location(x, y):
+
+                x_next, y_next = self.simulate_xy_next(x, y, action)
+                action_next, action_idx_next = self.get_epsilon_greedy_action(
+                    x_next, y_next, epsilon
+                )
+
+                Q_next = self.Q[x_next, y_next, action_idx_next]
+
+                reward = self.get_reward(x, y)
+
+                self.Q[x, y, action_idx] += step_size * (
+                    reward + self.discount * Q_next - self.Q[x, y, action_idx]
+                )
+
+                x, y = (x_next, y_next)
+                action, action_idx = (action_next, action_idx_next)
+
+        # TODO Is np.max(self.Q, axis=2) a biased estimate of the value function?
+        self.value_sarsa = np.max(self.Q, axis=2)
+
+        self.policy_sarsa = np.zeros((self.width, self.height, 2), dtype=int)
+
+        for x in range(self.width):
+            for y in range(self.height):
+
+                self.policy_sarsa[x, y] = ACTIONS[np.argmax(self.Q[x, y])]
+
+    def save_value_and_policy_function_plot(self, outfile, use_sarsa_results=False):
         fig, ax = plt.subplots()
+
+        if use_sarsa_results:
+            value = self.value_sarsa
+            policy = self.policy_sarsa
+
+        else:
+            value = self.value
+            policy = self.policy
 
         # Note: imshow puts first index along vertical axis,
         # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
-        im = ax.imshow(np.transpose(self.value), origin="lower")
+        im = ax.imshow(np.transpose(value), origin="lower")
 
         cbar = ax.figure.colorbar(im, ax=ax)
         cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
 
-        width, height = self.value.shape
-        x, y = np.meshgrid(np.arange(width), np.arange(height), indexing="ij")
+        x, y = np.meshgrid(np.arange(self.width), np.arange(self.height), indexing="ij")
 
         ax.quiver(
             x.flatten(),
             y.flatten(),
-            self.policy[:, :, 0].flatten(),
-            self.policy[:, :, 1].flatten(),
+            policy[:, :, 0].flatten(),
+            policy[:, :, 1].flatten(),
         )
 
         plt.plot(self.target_x, self.target_y, color="black", marker="x")
@@ -233,8 +328,12 @@ def main():
     gridworld = WindyGridworld()
 
     gridworld.run_policy_iteration()
-
     gridworld.save_value_and_policy_function_plot("value_and_policy_functions.png")
+
+    gridworld.run_sarsa()
+    gridworld.save_value_and_policy_function_plot(
+        "value_and_policy_functions_sarsa.png", use_sarsa_results=True
+    )
 
 
 if __name__ == "__main__":
