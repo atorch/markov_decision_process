@@ -17,6 +17,10 @@ REWARD_OBSTACLE = -10
 # Note: the problem ends when the agent reaches the target
 REWARD_TARGET = 0
 
+# Note: these are algorithm names (dictionary keys)
+POLICY_ITERATION = "policy_iteration"
+SARSA = "sarsa"
+Q_LEARNING = "q_learning"
 
 def is_valid_probability(x):
     return 0.0 <= x <= 1.0, "Probabilities must be between 0 and 1 (inclusive)"
@@ -70,6 +74,11 @@ class WindyGridworld:
         self.width = width
         self.height = height
 
+        # Note: value, policy, and Q functions will be saved in dictionaries
+        # with algorithm names as their keys (for example, self.value[POLICY_ITERATION]
+        # will store the value function estimated by policy iteration)
+        self.value, self.policy, self.Q = ({}, {}, {})
+
     def is_target_location(self, x, y):
 
         return x == self.target_x and y == self.target_y
@@ -121,7 +130,9 @@ class WindyGridworld:
             action_plus_wind = (action[0], action[1] + dy_from_wind)
             x_next, y_next = self.get_xy_next(x, y, action_plus_wind)
 
-            continuation_value += probability * self.value[x_next, y_next]
+            continuation_value += (
+                probability * self.value[POLICY_ITERATION][x_next, y_next]
+            )
 
         reward = self.get_reward(x, y)
 
@@ -129,12 +140,12 @@ class WindyGridworld:
 
     def get_updated_value_function(self):
 
-        updated_value = self.value.copy()
+        updated_value = self.value[POLICY_ITERATION].copy()
 
         for x in range(self.width):
             for y in range(self.height):
 
-                action = tuple(self.policy[x, y])
+                action = tuple(self.policy[POLICY_ITERATION][x, y])
                 assert (
                     action in ACTIONS
                 ), "Uh oh! There's an invalid action in the policy function"
@@ -151,11 +162,17 @@ class WindyGridworld:
 
             updated_value = self.get_updated_value_function()
 
-            self.value = updated_value
+            distance = np.max(np.abs(updated_value - self.value[POLICY_ITERATION]))
+
+            if distance < value_epsilon:
+                # Note: break early if the value function has already converged
+                break
+
+            self.value[POLICY_ITERATION] = updated_value
 
     def get_updated_policy_function(self):
 
-        updated_policy = self.policy.copy()
+        updated_policy = self.policy[POLICY_ITERATION].copy()
 
         for x in range(self.width):
             for y in range(self.height):
@@ -173,10 +190,12 @@ class WindyGridworld:
 
     def run_policy_iteration(self, max_iterations=50, verbose=True):
 
-        self.value = np.zeros((self.width, self.height))
+        self.value[POLICY_ITERATION] = np.zeros((self.width, self.height))
 
         # Note: policy[:, :, 0] is movement in x dimension, and policy[:, :, 1] is movement in y dimension
-        self.policy = np.zeros((self.width, self.height, 2), dtype=int)
+        self.policy[POLICY_ITERATION] = np.zeros(
+            (self.width, self.height, 2), dtype=int
+        )
 
         for iteration in range(max_iterations):
 
@@ -184,7 +203,7 @@ class WindyGridworld:
             self.solve_value_fn()
 
             if verbose:
-                print(self.value.round(1))
+                print(self.value[POLICY_ITERATION].round(1))
 
             # Note: given the updated value function, find the optimal policy
             updated_policy = self.get_updated_policy_function()
@@ -194,11 +213,11 @@ class WindyGridworld:
             #  between two or more policies that are equally good",
             # in which case this function will run until max_iterations
             # TODO Why was that note removed from the published text?
-            if np.all(self.policy == updated_policy):
+            if np.all(self.policy[POLICY_ITERATION] == updated_policy):
                 print(f"Policy function converged after {iteration} iteration(s)")
                 break
 
-            self.policy = updated_policy
+            self.policy[POLICY_ITERATION] = updated_policy
 
     def get_random_xy(self):
 
@@ -207,7 +226,7 @@ class WindyGridworld:
 
         return x, y
 
-    def get_epsilon_greedy_action(self, x, y, epsilon):
+    def get_epsilon_greedy_action(self, x, y, epsilon, algorithm):
 
         random_uniform = np.random.uniform()
 
@@ -215,7 +234,7 @@ class WindyGridworld:
             action_idx = np.random.choice(range(len(ACTIONS)))
 
         else:
-            action_idx = np.argmax(self.Q[x, y])
+            action_idx = np.argmax(self.Q[algorithm][x, y])
 
         return ACTIONS[action_idx], action_idx
 
@@ -230,10 +249,20 @@ class WindyGridworld:
 
         return x_next, y_next
 
-    def run_q_learning(self, step_size=0.1, n_episodes=100_000, epsilon=0.01):
+    def get_policy_from_Q(self, algorithm):
+        policy = np.zeros((self.width, self.height, 2), dtype=int)
+
+        for x in range(self.width):
+            for y in range(self.height):
+
+                policy[x, y] = ACTIONS[np.argmax(self.Q[algorithm][x, y])]
+
+        return policy
+
+    def run_q_learning(self, step_size=0.1, n_episodes=10000, epsilon=0.01):
 
         # Note: Q[x, y, idx] is the value of location (x, y) conditional on taking action ACTIONS[idx]
-        self.Q = np.zeros((self.width, self.height, len(ACTIONS)))
+        self.Q[Q_LEARNING] = np.zeros((self.width, self.height, len(ACTIONS)))
 
         for episode in range(n_episodes):
 
@@ -245,35 +274,31 @@ class WindyGridworld:
             while not self.is_target_location(x, y):
 
                 # Note: this uses self.Q
-                action, action_idx = self.get_epsilon_greedy_action(x, y, epsilon)
+                action, action_idx = self.get_epsilon_greedy_action(
+                    x, y, epsilon, Q_LEARNING
+                )
 
                 x_next, y_next = self.simulate_xy_next(x, y, action)
 
-                Q_next = np.max(self.Q[x_next, y_next])
+                Q_next = np.max(self.Q[Q_LEARNING][x_next, y_next])
 
                 reward = self.get_reward(x, y)
 
-                self.Q[x, y, action_idx] += step_size * (
-                    reward + self.discount * Q_next - self.Q[x, y, action_idx]
+                self.Q[Q_LEARNING][x, y, action_idx] += step_size * (
+                    reward + self.discount * Q_next - self.Q[Q_LEARNING][x, y, action_idx]
                 )
 
                 x, y = (x_next, y_next)
 
         # TODO Is np.max(self.Q, axis=2) a biased estimate of the value function?
-        self.value_q_learning = np.max(self.Q, axis=2)
+        self.value[Q_LEARNING] = np.max(self.Q[Q_LEARNING], axis=2)
 
-        self.policy_q_learning = np.zeros((self.width, self.height, 2), dtype=int)
+        self.policy[Q_LEARNING] = self.get_policy_from_Q(Q_LEARNING)
 
-        # TODO This is duplicated in SARSA code, make it a function
-        for x in range(self.width):
-            for y in range(self.height):
-
-                self.policy_q_learning[x, y] = ACTIONS[np.argmax(self.Q[x, y])]
-
-    def run_sarsa(self, step_size=0.1, n_episodes=100_000):
+    def run_sarsa(self, step_size=0.1, n_episodes=10000):
 
         # Note: Q[x, y, idx] is the value of location (x, y) conditional on taking action ACTIONS[idx]
-        self.Q = np.zeros((self.width, self.height, len(ACTIONS)))
+        self.Q[SARSA] = np.zeros((self.width, self.height, len(ACTIONS)))
 
         for episode in range(n_episodes):
 
@@ -286,43 +311,37 @@ class WindyGridworld:
             x, y = self.get_random_xy()
 
             # Note: this uses self.Q
-            action, action_idx = self.get_epsilon_greedy_action(x, y, epsilon)
+            action, action_idx = self.get_epsilon_greedy_action(x, y, epsilon, SARSA)
 
             while not self.is_target_location(x, y):
 
                 x_next, y_next = self.simulate_xy_next(x, y, action)
                 action_next, action_idx_next = self.get_epsilon_greedy_action(
-                    x_next, y_next, epsilon
+                    x_next, y_next, epsilon, SARSA
                 )
 
-                Q_next = self.Q[x_next, y_next, action_idx_next]
+                Q_next = self.Q[SARSA][x_next, y_next, action_idx_next]
 
                 reward = self.get_reward(x, y)
 
-                self.Q[x, y, action_idx] += step_size * (
-                    reward + self.discount * Q_next - self.Q[x, y, action_idx]
+                self.Q[SARSA][x, y, action_idx] += step_size * (
+                    reward + self.discount * Q_next - self.Q[SARSA][x, y, action_idx]
                 )
 
                 x, y = (x_next, y_next)
                 action, action_idx = (action_next, action_idx_next)
 
-        # TODO Is np.max(self.Q, axis=2) a biased estimate of the value function?
-        self.value_sarsa = np.max(self.Q, axis=2)
+        self.value[SARSA] = np.max(self.Q[SARSA], axis=2)
 
-        self.policy_sarsa = np.zeros((self.width, self.height, 2), dtype=int)
+        self.policy[SARSA] = self.get_policy_from_Q(SARSA)
 
-        for x in range(self.width):
-            for y in range(self.height):
-
-                self.policy_sarsa[x, y] = ACTIONS[np.argmax(self.Q[x, y])]
-
-    def save_value_and_policy_function_plot(self, value, policy, outfile):
+    def save_value_and_policy_function_plot(self, algorithm, outfile):
 
         fig, ax = plt.subplots()
 
         # Note: imshow puts first index along vertical axis,
         # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
-        im = ax.imshow(np.transpose(value), origin="lower")
+        im = ax.imshow(np.transpose(self.value[algorithm]), origin="lower")
 
         cbar = ax.figure.colorbar(im, ax=ax)
         cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
@@ -332,8 +351,8 @@ class WindyGridworld:
         ax.quiver(
             x.flatten(),
             y.flatten(),
-            policy[:, :, 0].flatten(),
-            policy[:, :, 1].flatten(),
+            self.policy[algorithm][:, :, 0].flatten(),
+            self.policy[algorithm][:, :, 1].flatten(),
         )
 
         plt.plot(self.target_x, self.target_y, color="black", marker="x")
@@ -362,21 +381,17 @@ def main():
 
     gridworld.run_policy_iteration()
     gridworld.save_value_and_policy_function_plot(
-        gridworld.value, gridworld.policy, "value_and_policy_functions.png"
+        POLICY_ITERATION, "value_and_policy_functions.png"
     )
 
     gridworld.run_q_learning()
     gridworld.save_value_and_policy_function_plot(
-        gridworld.value_q_learning,
-        gridworld.policy_q_learning,
-        "value_and_policy_functions_q_learning.png",
+        Q_LEARNING, "value_and_policy_functions_q_learning.png"
     )
 
     gridworld.run_sarsa()
     gridworld.save_value_and_policy_function_plot(
-        gridworld.value_sarsa,
-        gridworld.policy_sarsa,
-        "value_and_policy_functions_sarsa.png",
+        SARSA, "value_and_policy_functions_sarsa.png"
     )
 
 
