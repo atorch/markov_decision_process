@@ -22,6 +22,7 @@ POLICY_ITERATION = "policy_iteration"
 SARSA = "sarsa"
 Q_LEARNING = "q_learning"
 
+
 def is_valid_probability(x):
     return 0.0 <= x <= 1.0, "Probabilities must be between 0 and 1 (inclusive)"
 
@@ -156,7 +157,7 @@ class WindyGridworld:
 
         return updated_value
 
-    def solve_value_fn(self, max_iterations=50, value_epsilon=0.001):
+    def solve_value_fn(self, max_iterations=50, value_epsilon=0.00001):
 
         for iteration in range(max_iterations):
 
@@ -285,7 +286,9 @@ class WindyGridworld:
                 reward = self.get_reward(x, y)
 
                 self.Q[Q_LEARNING][x, y, action_idx] += step_size * (
-                    reward + self.discount * Q_next - self.Q[Q_LEARNING][x, y, action_idx]
+                    reward
+                    + self.discount * Q_next
+                    - self.Q[Q_LEARNING][x, y, action_idx]
                 )
 
                 x, y = (x_next, y_next)
