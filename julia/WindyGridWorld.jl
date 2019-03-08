@@ -1,4 +1,4 @@
-module WindyGridWorld
+module WindyGrid
 const actions = [0 0; -1 0; 1 0; 0 -1; 0 1]
 const windactions = [1, 0, -1]
 
@@ -14,7 +14,7 @@ const prpushdown = .2
 const discount = .9
 
 
-mutable struct WindyGridWorld
+struct WindyGridWorld
     shape::Array{Int, 1}
     target::Array{Int, 1}
     obstacles::Array{Int, 2}
@@ -22,13 +22,9 @@ mutable struct WindyGridWorld
     prpushup::Float64
     prpushdown::Float64
     prstay::Float64
-    valuegrid::Array{Float64, 2}
-    policygrid::Array{Int, 3}
     function WindyGridWorld(shape, target, obstacles, discount, prpushup, prpushdown)
         prstay = 1. - prpushup - prpushdown
-        valuegrid = zeros(Int, shape...)
-        policygrid = zeros(Int, shape..., 2)
-        new(shape, target, obstacles, discount, prpushup, prpushdown, prstay, valuegrid, policygrid)
+        new(shape, target, obstacles, discount, prpushup, prpushdown, prstay)
     end
 end
 
@@ -58,48 +54,46 @@ function getnextlocation(world::WindyGridWorld, location::Array{Int, 1}, action:
     min.(max.(nextlocation, ones(Int, size(location))), world.shape)
 end
 
-function getcontinuationvalue(world::WindyGridWorld, location::Array{Int, 1}, action::Array{Int, 1}, windy::Int, p::Float64)
+function getcontinuationvalue(valuefn, world::WindyGridWorld, location::Array{Int, 1}, action::Array{Int, 1}, windy::Int, p::Float64)
     action = action + [0, windy]
     nextlocation = getnextlocation(world, location, action)
-    p * world.valuegrid[nextlocation...]
+    p * valuefn[nextlocation...]
 end
 
 
-function getvalue(world::WindyGridWorld, location::Array{Int, 1}, action::Array{Int, 1})
+function getvalue(valuefn, world::WindyGridWorld, location::Array{Int, 1}, action::Array{Int, 1})
     if istarget(world, location)
         0.0
     end
     windprobs = [world.prpushup, world.prpushdown, world.prstay]
-    continuationvalue = sum([ getcontinuationvalue(world, location, action, windaction, p) for (windaction, p) in zip(windactions, windprobs) ])
+    continuationvalue = sum([ getcontinuationvalue(valuefn, world, location, action, windaction, p) for (windaction, p) in zip(windactions, windprobs) ])
     reward = getreward(world, location)
     reward + world.discount * continuationvalue
 end
 
-function updatevaluegrid(world::WindyGridWorld)
-    updatedgrid = copy(world.valuegrid)
+function updatevaluefn(valuefn, policyfn, world::WindyGridWorld)
+    updatedvaluefn = copy(valuefn)
 
-    for j = 1:world.shape[2], i=world.shape[1]
-        action = world.policygrid[i, j, :]
-        updatedgrid[i, j] = getvalue(world, [i, j], action)
+    for i = 1:world.shape[1], j=world.shape[2]
+        action = policyfn[i, j, :]
+        updatedgrid[i, j] = getvalue(valuefn, world, [i, j], action)
     end
-
-    updatedgrid
+    updatedvaluefn
 end
 
-function solvevaluefn!(world::WindyGridWorld, maxiterations::Int=50)
+function solvevaluefn!(valuefn, policyfn, world::WindyGridWorld, maxiterations::Int=50)
     for _ = 1:maxiterations
-        world.valuegrid = updatevaluegrid(world)
+        valuefn = updatevaluefn(world)
     end
+    valuefn
 end
 
 
-function updatepolicygrid(world::WindyGridWorld)
-    updatedgrid = copy(world.policygrid)
+function updatepolicyfn(valuefn, policyfn, world::WindyGridWorld)
+    updatedgrid = copy(policyfn)
 
-    for j = 1:world.shape[2], i=world.shape[1]
-        candidates = [ getvalue(world, [i, j], actions[i, :]) for i = 1:size(actions)[1] ]
-        display(candidates)
-        display(argmax(candidates))
+    for i = 1:world.shape[1], j=world.shape[2]
+        candidates = [ getvalue(valuefn, world, [i, j], actions[i, :]) for i = 1:size(actions)[1] ]
 
         updatedgrid[i, j] = actions[argmax(candidates), :]
     end
@@ -110,20 +104,23 @@ end
 function policyiteration(maxiterations::Int=50, verbose::Bool=true)
     world = WindyGridWorld(shape, target, obstacles, discount, prpushup, prpushdown)
 
+    valuefn = zeros(Int, world.shape)
+    policyfn = zeros(Int, world.shape..., 2)
+
     for i in 1:maxiterations
-        solvevaluefn!(world)
+        valuefn = solvevaluefn!(valuefn, policyfn, world)
 
         if verbose
-            display(round.(world.valuegrid, digits=3))
+            display(round.(valuefn, digits=3))
         end
 
-        updatedpolicy = updatepolicygrid(world)
-        if all(updated_policy .= world.policygrid)
+        updatedpolicy = updatepolicyfn(world)
+        if all(updated_policy .= policyfn)
             println("Converged after $i iterations.")
             break
         end
 
-        world.policygrid = updatedpolicy
+        policyfn = updatedpolicy
     end
     world
 end
@@ -139,5 +136,3 @@ function validdiscount(d)
 end
 
 end
-
-policyiteration()
