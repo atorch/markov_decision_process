@@ -22,8 +22,16 @@ struct WindyGridWorld
     prpushup::Float64
     prpushdown::Float64
     prstay::Float64
+
     function WindyGridWorld(shape, target, obstacles, discount, prpushup, prpushdown)
+        validdiscount(discount) || error("Invalid discount $discount")
+
         prstay = 1. - prpushup - prpushdown
+        all(map(validprobability, [prpushdown, prpushup, prstay])) || error("Invalid wind probability.")
+
+        validlocation(target) || error("Target $target out of grid.")
+        validobstacles(obstacles) || error("Obstacles out of grid.")
+
         new(shape, target, obstacles, discount, prpushup, prpushdown, prstay)
     end
 end
@@ -42,39 +50,73 @@ end
 function getreward(world::WindyGridWorld, location::Array{Int, 1})
     if istarget(world, location)
         targetreward
+
     elseif isobstacle(world, location)
         obstaclereward
+
     else
         defaultreward
     end
 end
 
-function getnextlocation(world::WindyGridWorld, location::Array{Int, 1}, action::Array{Int, 1})
+function getnextlocation(
+        world::WindyGridWorld,
+        location::Array{Int, 1},
+        action::Array{Int, 1}
+    )
     nextlocation = location + action
     min.(max.(nextlocation, ones(Int, size(location))), world.shape)
 end
 
-function getcontinuationvalue(valuefn, world::WindyGridWorld, location::Array{Int, 1}, action::Array{Int, 1}, windy::Int, p::Float64)
+function getcontinuationvalue(
+        valuefn,
+        world::WindyGridWorld,
+        location::Array{Int, 1},
+        action::Array{Int, 1},
+        windy::Int,
+        p::Float64
+    )
     action = action + [0, windy]
     nextlocation = getnextlocation(world, location, action)
     p * valuefn[nextlocation...]
 end
 
 
-function getvalue(valuefn, world::WindyGridWorld, location::Array{Int, 1}, action::Array{Int, 1})
+function getvalue(
+    valuefn,
+    world::WindyGridWorld,
+    location::Array{Int, 1},
+    action::Array{Int, 1}
+)
     if istarget(world, location)
         0.0
     end
+
     windprobs = [world.prpushup, world.prpushdown, world.prstay]
-    continuationvalue = sum([ getcontinuationvalue(valuefn, world, location, action, windaction, p) for (windaction, p) in zip(windactions, windprobs) ])
+
+    continuationvalue = sum(
+        [
+            getcontinuationvalue(
+                valuefn,
+                world,
+                location,
+                action,
+                windaction,
+                p
+            )
+            for (windaction, p) in zip(windactions, windprobs)
+        ]
+    )
+
     reward = getreward(world, location)
+
     reward + world.discount * continuationvalue
 end
 
 function updatevaluefn(valuefn, policyfn, world::WindyGridWorld)
     updatedvaluefn = copy(valuefn)
 
-    for i = 1:world.shape[1], j=world.shape[2]
+    for i = 1:world.shape[1], j=1:world.shape[2]
         action = policyfn[i, j, :]
         updatedgrid[i, j] = getvalue(valuefn, world, [i, j], action)
     end
@@ -133,6 +175,19 @@ end
 
 function validdiscount(d)
     0 < d <= 1
+end
+
+function validlocation(gridshape::Array{Int, 1}, location::Array{Int, 1})
+    all(location .>= 1) && all(location .<= gridshape)
+end
+
+function validlocation(gridshape::Array{Int, 1}, location::Array{Int, 2})
+    all(location .>= 1) && all(location .<= gridshape)
+end
+
+
+function validobstacles(gridshape::Array{Int, 1}, obstacles::Array{Int, 2})
+    all(mapslices(obstacle -> validlocation(gridshape, obstacle), obstacles, dims=[2]))
 end
 
 end
