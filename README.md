@@ -4,7 +4,11 @@ Examples of Markov Decision Processes (MDPs)
 
 # Windy Gridworld
 
-[windy_gridworld.py](windy_gridworld.py)
+Solutions:
+
+* [WindyGridWorld.elm](elm/src/WindyGridWorld.elm)
+* [WindyGridWorld.jl](julia/WindyGridWorld.jl)
+* [windy_gridworld.py](python/windy_gridworld.py)
 
 This problem is loosely based on example 6.5 in
 [Reinforcement Learning](https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf)
