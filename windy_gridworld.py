@@ -22,6 +22,8 @@ POLICY_ITERATION = "policy_iteration"
 SARSA = "sarsa"
 Q_LEARNING = "q_learning"
 
+PLOT_FILENAME = "value_and_policy_functions_solved_by_{algorithm}"
+
 
 def is_valid_probability(x):
     return 0.0 <= x <= 1.0, "Probabilities must be between 0 and 1 (inclusive)"
@@ -120,7 +122,7 @@ class WindyGridworld:
             # Note: value is zero when you reach the target
             return 0.0
 
-        continuation_value = 0.0
+        expected_continuation_value = 0.0
 
         for probability, dy_from_wind in [
             (self.pr_wind_up, 1),
@@ -131,13 +133,13 @@ class WindyGridworld:
             action_plus_wind = (action[0], action[1] + dy_from_wind)
             x_next, y_next = self.get_xy_next(x, y, action_plus_wind)
 
-            continuation_value += (
+            expected_continuation_value += (
                 probability * self.value[POLICY_ITERATION][x_next, y_next]
             )
 
         reward = self.get_reward(x, y)
 
-        return reward + self.discount * continuation_value
+        return reward + self.discount * expected_continuation_value
 
     def get_updated_value_function(self):
 
@@ -338,7 +340,7 @@ class WindyGridworld:
 
         self.policy[SARSA] = self.get_policy_from_Q(SARSA)
 
-    def save_value_and_policy_function_plot(self, algorithm, outfile):
+    def save_value_and_policy_function_plot(self, algorithm):
 
         fig, ax = plt.subplots()
 
@@ -375,6 +377,7 @@ class WindyGridworld:
 
         plt.title("Value and Policy Functions")
 
+        outfile = PLOT_FILENAME.format(algorithm=algorithm)
         plt.savefig(outfile)
 
 
@@ -383,19 +386,13 @@ def main():
     gridworld = WindyGridworld()
 
     gridworld.run_policy_iteration()
-    gridworld.save_value_and_policy_function_plot(
-        POLICY_ITERATION, "value_and_policy_functions.png"
-    )
+    gridworld.save_value_and_policy_function_plot(POLICY_ITERATION)
 
     gridworld.run_q_learning()
-    gridworld.save_value_and_policy_function_plot(
-        Q_LEARNING, "value_and_policy_functions_q_learning.png"
-    )
+    gridworld.save_value_and_policy_function_plot(Q_LEARNING)
 
     gridworld.run_sarsa()
-    gridworld.save_value_and_policy_function_plot(
-        SARSA, "value_and_policy_functions_sarsa.png"
-    )
+    gridworld.save_value_and_policy_function_plot(SARSA)
 
 
 if __name__ == "__main__":
