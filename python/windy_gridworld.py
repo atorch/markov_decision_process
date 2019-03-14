@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -23,7 +25,7 @@ SARSA = "sarsa"
 Q_LEARNING = "q_learning"
 
 PLOT_FILENAME = "value_and_policy_functions_solved_by_{algorithm}"
-
+PLOT_DIR = "./plots"
 
 def is_valid_probability(x):
     return 0.0 <= x <= 1.0, "Probabilities must be between 0 and 1 (inclusive)"
@@ -185,6 +187,8 @@ class WindyGridworld:
                     for action in ACTIONS
                 ]
 
+                # TODO Allow list of optimal actions (in case there are ties),
+                # and show them all in quiver plot
                 optimal_action = ACTIONS[np.argmax(candidate_values)]
 
                 updated_policy[x, y] = optimal_action
@@ -377,8 +381,13 @@ class WindyGridworld:
 
         plt.title("Value and Policy Functions")
 
+        outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), PLOT_DIR)
+
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+
         outfile = PLOT_FILENAME.format(algorithm=algorithm)
-        plt.savefig(outfile)
+        plt.savefig(os.path.join(outdir, outfile))
 
 
 def main():

@@ -10,7 +10,7 @@ This problem is loosely based on example 6.5 in
 [Reinforcement Learning](https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf)
 by Sutton and Barto.
 
-![Value and Policy Functions](value_and_policy_functions.png)
+![Value and Policy Functions](python/plots/value_and_policy_functions_solved_by_policy_iteration.png)
 
 The agent's state is their (x, y) location on a grid,
 and the actions are {stay, left, right, down, up}.
