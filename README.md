@@ -14,7 +14,7 @@ This problem is loosely based on example 6.5 in
 [Reinforcement Learning](https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf)
 by Sutton and Barto.
 
-![Value and Policy Functions](python/plots/value_and_policy_functions_solved_by_policy_iteration.png)
+![Value and Policy Functions](python/plots/value_and_policy_functions_solved_by_policy_iteration_with_wind.png)
 
 The agent's state is their (x, y) location on a grid,
 and the actions are {stay, left, right, down, up}.
@@ -36,3 +36,8 @@ costly obstacle if they are either directly above or beneath it.
 Notice that the optimal policy (black arrows in the figure above)
 involves circumventing the obstacles by a wide margin in the
 y direction.
+
+The addition of randomness (the wind) changes the solution in
+subtle ways. [TODO Explain (1) frequency of ties and
+(2) locations in the state space where the value function
+is either higher or lower relative to the windless case]
