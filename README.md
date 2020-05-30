@@ -10,11 +10,13 @@ Solutions:
 * [WindyGridWorld.jl](julia/WindyGridWorld.jl)
 * [windy_gridworld.py](python/windy_gridworld.py)
 
-This problem is loosely based on example 6.5 in
+This problem is loosely based on Figure 4.2 and on Example 6.5 in
 [Reinforcement Learning](https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf)
 by Sutton and Barto.
 
 ![Value and Policy Functions](python/plots/value_and_policy_functions_solved_by_policy_iteration_with_wind.png)
+
+![Value and Policy Functions](python/plots/value_and_policy_functions_solved_by_policy_iteration_without_wind.png)
 
 The agent's state is their (x, y) location on a grid,
 and the actions are {stay, left, right, down, up}.
@@ -38,6 +40,21 @@ involves circumventing the obstacles by a wide margin in the
 y direction.
 
 The addition of randomness (the wind) changes the solution in
-subtle ways. [TODO Explain (1) frequency of ties and
-(2) locations in the state space where the value function
-is either higher or lower relative to the windless case]
+subtle ways:
+
+* In the non-stochastic version of the problem (i.e. without wind),
+there are many more ties in the policy function
+(i.e. points in the state space at which there are multiple optimal actions).
+There exist multiple paths of equal length that avoid the obstacles and reach the
+target point in an optimal number of steps, and the agent has no reason to prefer
+one such path above another. Adding wind breaks _most_ (but not all) ties:
+with wind, the agent generally prefers to remain far from the obstacles (to reduce the
+probability of being blow into one), but also has the possibility of using the wind
+advantageously (by moving horizontally and letting the wind move the agent vertically).
+
+* The value function is _generally_ lower with wind (because the agent now faces
+the risk that they will hit an obstacle, even when they act optimally), but at
+certain values of the wind probabilities and at certain points in the state space,
+the reverse can be true.
+
+* It is sometimes optimal for the agent to walk straight towards the obstacle!

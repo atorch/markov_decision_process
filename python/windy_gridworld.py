@@ -29,8 +29,8 @@ Q_LEARNING = "q_learning"
 PLOT_FILENAME = "value_and_policy_functions_solved_by_{algorithm}_{wind_description}"
 PLOT_DIR = "./plots"
 
-PR_WIND_UP = 0.1
-PR_WIND_DOWN = 0.2
+PR_WIND_UP = 0.3
+PR_WIND_DOWN = 0.3
 
 
 def is_valid_probability(x):
@@ -472,6 +472,11 @@ def main():
 
     windless_gridworld.run_policy_iteration()
     windless_gridworld.save_value_and_policy_function_plot(POLICY_ITERATION)
+
+    # Notice that the value function is generally (but not always!) larger in the windless case
+    print("Differences in value function (value without wind - value with wind)")
+    diff_in_value = windless_gridworld.value[POLICY_ITERATION] - gridworld.value[POLICY_ITERATION]
+    print(diff_in_value.round(1))
 
 
 if __name__ == "__main__":
