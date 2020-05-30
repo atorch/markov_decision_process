@@ -6,45 +6,51 @@ import matplotlib.pyplot as plt
 
 
 # Note: actions are tuples of change in (x, y) position, i.e. (dx, dy)
-# Valid actions are stay, left, right, down, up
+#  Valid actions are stay, left, right, down, up
 ACTIONS = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]
 
-# Note: earn this reward in every period until objective is reached (which ends the episode)
-# With a negative reward, the goal is to reach the objective (target location) as fast as possible
+# Note: the agent earns this reward in every period until
+#  the objective is reached (which ends the episode)
+#  The goal is to reach the objective (target location) as fast as possible
 REWARD_DEFAULT = -1
 
-# Note: certain locations can be "obstacles" which are passable but very costly
+# Note: certain locations are "obstacles" which are passable but very costly
+#  Since REWARD_OBSTACLE < REWARD_DEFAULT, the agent would like to avoid these locations
 REWARD_OBSTACLE = -10
 
 # Note: the problem ends when the agent reaches the target
 REWARD_TARGET = 0
 
-# Note: these are algorithm names (dictionary keys)
+# Note: these are algorithm names
 POLICY_ITERATION = "policy_iteration"
 SARSA = "sarsa"
 Q_LEARNING = "q_learning"
 
-PLOT_FILENAME = "value_and_policy_functions_solved_by_{algorithm}"
+PLOT_FILENAME = "value_and_policy_functions_solved_by_{algorithm}_{wind_description}"
 PLOT_DIR = "./plots"
+
+PR_WIND_UP = 0.3
+PR_WIND_DOWN = 0.3
+
 
 def is_valid_probability(x):
     return 0.0 <= x <= 1.0, "Probabilities must be between 0 and 1 (inclusive)"
 
 
 def is_valid_discount_factor(x):
-    return 0.0 < x < 1.0, "Discount factor must be between 0 and 1 (exclusive)"
+    return 0.0 <= x <= 1.0, "Discount factor must be between 0 and 1 (inclusive)"
 
 
 class WindyGridworld:
     def __init__(
         self,
+        pr_wind_up,
+        pr_wind_down,
         width=10,
         height=12,
         target_xy=[6, 8],
         obstacles_xy=[[5, 8], [6, 6]],
-        pr_wind_up=0.1,
-        pr_wind_down=0.2,
-        discount=0.90,
+        discount=1.0,
     ):
         assert is_valid_probability(pr_wind_down)
         assert is_valid_probability(pr_wind_up)
@@ -80,8 +86,8 @@ class WindyGridworld:
         self.height = height
 
         # Note: value, policy, and Q functions will be saved in dictionaries
-        # with algorithm names as their keys (for example, self.value[POLICY_ITERATION]
-        # will store the value function estimated by policy iteration)
+        #  with algorithm names as their keys (for example, self.value[POLICY_ITERATION]
+        #  will store the value function estimated by policy iteration)
         self.value, self.policy, self.Q = ({}, {}, {})
 
     def is_target_location(self, x, y):
@@ -97,9 +103,11 @@ class WindyGridworld:
             ]
         )
 
-    def get_xy_next(self, x, y, action_plus_wind):
+    def get_xy_next(self, x, y, dx_and_dy):
 
-        x_next, y_next = (x + action_plus_wind[0], y + action_plus_wind[1])
+        # Note: the y component of dx_and_dy is the sum of the agent's action and stochastic wind
+
+        x_next, y_next = (x + dx_and_dy[0], y + dx_and_dy[1])
 
         # Note: this prevents the next (x, y) location from being outside of the grid
         x_next = min(max(x_next, 0), self.width - 1)
@@ -119,10 +127,13 @@ class WindyGridworld:
 
     def get_updated_value_at_location(self, x, y, action):
 
+        reward = self.get_reward(x, y)
+
         if self.is_target_location(x, y):
 
-            # Note: value is zero when you reach the target
-            return 0.0
+            # Note: there is no continuation value when the agent reaches the target
+            #  (they receive REWARD_TARGET and the episode ends)
+            return reward
 
         expected_continuation_value = 0.0
 
@@ -131,15 +142,13 @@ class WindyGridworld:
             (self.pr_wind_stay, 0),
             (self.pr_wind_down, -1),
         ]:
-            # Note: wind randomly modifies action's vertical (y-axis) movement
-            action_plus_wind = (action[0], action[1] + dy_from_wind)
-            x_next, y_next = self.get_xy_next(x, y, action_plus_wind)
+            # Note: wind randomly modifies action's vertical (y-axis) component
+            dx_and_dy = (action[0], action[1] + dy_from_wind)
+            x_next, y_next = self.get_xy_next(x, y, dx_and_dy)
 
             expected_continuation_value += (
                 probability * self.value[POLICY_ITERATION][x_next, y_next]
             )
-
-        reward = self.get_reward(x, y)
 
         return reward + self.discount * expected_continuation_value
 
@@ -156,12 +165,15 @@ class WindyGridworld:
                 ), "Uh oh! There's an invalid action in the policy function"
 
                 # Note: this uses self.value, i.e. the value function from the previous iteration,
-                # in addition to the policy function
+                #  in addition to the policy function
                 updated_value[x, y] = self.get_updated_value_at_location(x, y, action)
 
         return updated_value
 
     def solve_value_fn(self, max_iterations=50, value_epsilon=0.00001):
+
+        # TODO Could be fun to also solve the value fn by sparse matrix inversion,
+        #  which is probably feasible given the problem size
 
         for iteration in range(max_iterations):
 
@@ -174,6 +186,36 @@ class WindyGridworld:
                 break
 
             self.value[POLICY_ITERATION] = updated_value
+
+    def get_locations_with_ties_in_policy_function(self):
+
+        locations_with_ties = []
+        alternate_optimal_actions = []
+
+        for x in range(self.width):
+            for y in range(self.height):
+
+                # Note: technically, all actions are optimal at the target location
+                #  (because the episode ends), but the plots look nicer without alternate
+                #  optimal actions at the target location
+                if self.is_target_location(x, y):
+                    continue
+
+                candidate_values = [
+                    self.get_updated_value_at_location(x, y, action)
+                    for action in ACTIONS
+                ]
+
+                optimal_value = np.max(candidate_values)
+
+                if np.sum(np.isclose(candidate_values, optimal_value)) > 1:
+
+                    locations_with_ties.append((x, y))
+
+                    optimal_action_indices = np.where(np.isclose(candidate_values, optimal_value))[0]
+                    alternate_optimal_actions.append([ACTIONS[index] for index in optimal_action_indices[1:]])
+
+        return locations_with_ties, alternate_optimal_actions
 
     def get_updated_policy_function(self):
 
@@ -188,7 +230,9 @@ class WindyGridworld:
                 ]
 
                 # TODO Allow list of optimal actions (in case there are ties),
-                # and show them all in quiver plot
+                # and show them all in quiver plot  # TODO Do this here, and remove fn above?
+                # Note: the argmax docs state that "In case of multiple occurrences of the maximum values,
+                #  the indices corresponding to the first occurrence are returned."
                 optimal_action = ACTIONS[np.argmax(candidate_values)]
 
                 updated_policy[x, y] = optimal_action
@@ -226,6 +270,10 @@ class WindyGridworld:
 
             self.policy[POLICY_ITERATION] = updated_policy
 
+        # TODO Does this belong here or in another fn?
+        # Do this for each algorithm?  Unlikely to have exact ties for algorithms that include random simulation/approximation error
+        self.locations_with_ties, self.alternate_optimal_actions = self.get_locations_with_ties_in_policy_function()
+
     def get_random_xy(self):
 
         x = np.random.choice(range(self.width))
@@ -251,8 +299,8 @@ class WindyGridworld:
             [1, 0, -1], p=[self.pr_wind_up, self.pr_wind_stay, self.pr_wind_down]
         )
 
-        action_plus_wind = (action[0], action[1] + dy_from_wind)
-        x_next, y_next = self.get_xy_next(x, y, action_plus_wind)
+        dx_and_dy = (action[0], action[1] + dy_from_wind)
+        x_next, y_next = self.get_xy_next(x, y, dx_and_dy)
 
         return x_next, y_next
 
@@ -344,6 +392,13 @@ class WindyGridworld:
 
         self.policy[SARSA] = self.get_policy_from_Q(SARSA)
 
+    def get_wind_description(self):
+
+        if np.allclose([self.pr_wind_up, self.pr_wind_down], 0.0):
+            return "Without Wind"
+
+        return "With Wind"
+
     def save_value_and_policy_function_plot(self, algorithm):
 
         fig, ax = plt.subplots()
@@ -376,23 +431,33 @@ class WindyGridworld:
                 marker="o",
             )
 
+        if algorithm == POLICY_ITERATION:
+
+            for location_with_ties, alternate_optimal_actions in zip(self.locations_with_ties, self.alternate_optimal_actions):
+
+                actions_x, actions_y = list(zip(*alternate_optimal_actions))
+                ax.quiver(location_with_ties[0], location_with_ties[1], actions_x, actions_y)
+
         plt.xlabel("x")
         plt.ylabel("y")
 
-        plt.title("Value and Policy Functions")
+        wind_description = self.get_wind_description()
+        plt.title(f"Value and Policy Functions {wind_description}")
 
         outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), PLOT_DIR)
 
         if not os.path.exists(outdir):
             os.makedirs(outdir)
 
-        outfile = PLOT_FILENAME.format(algorithm=algorithm)
+        wind_description_for_filename = wind_description.lower().replace(" ", "_")
+
+        outfile = PLOT_FILENAME.format(algorithm=algorithm, wind_description=wind_description_for_filename)
         plt.savefig(os.path.join(outdir, outfile))
 
 
 def main():
 
-    gridworld = WindyGridworld()
+    gridworld = WindyGridworld(pr_wind_up=PR_WIND_UP, pr_wind_down=PR_WIND_DOWN)
 
     gridworld.run_policy_iteration()
     gridworld.save_value_and_policy_function_plot(POLICY_ITERATION)
@@ -402,6 +467,16 @@ def main():
 
     gridworld.run_sarsa()
     gridworld.save_value_and_policy_function_plot(SARSA)
+
+    windless_gridworld = WindyGridworld(pr_wind_up=0.0, pr_wind_down=0.0)
+
+    windless_gridworld.run_policy_iteration()
+    windless_gridworld.save_value_and_policy_function_plot(POLICY_ITERATION)
+
+    # Notice that the value function is generally (but not always!) larger in the windless case
+    print("Differences in value function (value without wind - value with wind)")
+    diff_in_value = windless_gridworld.value[POLICY_ITERATION] - gridworld.value[POLICY_ITERATION]
+    print(diff_in_value.round(1))
 
 
 if __name__ == "__main__":
