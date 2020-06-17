@@ -34,8 +34,8 @@ red circles in the image above), and these are very costly (the
 ; you can imagine the agent getting "stuck" for
 10 moves if they walk into one of these locations).
 * There is random "wind" in the up-down direction (y axis),
-which sometimes pushes the agent either up or down beyond their
-intended move. This means the agent might be pushed into a
+which sometimes pushes the agent [either up or down](python/windy_gridworld.py#L32)
+beyond their intended move. This means the agent might be pushed into a
 costly obstacle if they are either directly above or beneath it.
 Notice that the optimal policy (black arrows in the figure above)
 involves circumventing the obstacles by a wide margin in the

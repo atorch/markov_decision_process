@@ -229,8 +229,6 @@ class WindyGridworld:
                     for action in ACTIONS
                 ]
 
-                # TODO Allow list of optimal actions (in case there are ties),
-                # and show them all in quiver plot  # TODO Do this here, and remove fn above?
                 # Note: the argmax docs state that "In case of multiple occurrences of the maximum values,
                 #  the indices corresponding to the first occurrence are returned."
                 optimal_action = ACTIONS[np.argmax(candidate_values)]
@@ -270,8 +268,6 @@ class WindyGridworld:
 
             self.policy[POLICY_ITERATION] = updated_policy
 
-        # TODO Does this belong here or in another fn?
-        # Do this for each algorithm?  Unlikely to have exact ties for algorithms that include random simulation/approximation error
         self.locations_with_ties, self.alternate_optimal_actions = self.get_locations_with_ties_in_policy_function()
 
     def get_random_xy(self):
@@ -392,6 +388,55 @@ class WindyGridworld:
 
         self.policy[SARSA] = self.get_policy_from_Q(SARSA)
 
+    def get_simulated_path(self, initial_xy, max_iterations=1000):
+
+        xs = [initial_xy[0]]
+        ys = [initial_xy[1]]
+
+        x, y = initial_xy
+
+        for time in range(max_iterations):
+
+            action = tuple(self.policy[POLICY_ITERATION][x, y])
+            x, y = self.simulate_xy_next(x, y, action)
+
+            # Note: jitter randomly so that the simulated paths aren't exactly on top of each other when plotting
+            xs.append(x)
+            ys.append(y)
+
+            if self.is_target_location(x, y):
+
+                return xs, ys
+
+        return xs, ys
+
+    def save_simulated_paths_plot(self, algorithm=POLICY_ITERATION, n_simulations=1000):
+
+        fig, ax = plt.subplots()
+
+        # Note: imshow puts first index along vertical axis,
+        # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
+        im = ax.imshow(np.transpose(self.value[algorithm]), origin="lower")
+
+        cbar = ax.figure.colorbar(im, ax=ax)
+        cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
+
+        plt.xlabel("x")
+        plt.ylabel("y")
+
+        for _ in range(n_simulations):
+    
+            xs, ys = self.get_simulated_path(initial_xy=(0, 0))
+            plt.plot(xs, ys, color="black", alpha=0.1)
+
+            xs, ys = self.get_simulated_path(initial_xy=(0, 6))
+            plt.plot(xs, ys, color="blue", alpha=0.1)
+
+        outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), PLOT_DIR)
+
+        outfile = "test.png"
+        plt.savefig(os.path.join(outdir, outfile))
+
     def get_wind_description(self):
 
         if np.allclose([self.pr_wind_up, self.pr_wind_down], 0.0):
@@ -461,6 +506,7 @@ def main():
 
     gridworld.run_policy_iteration()
     gridworld.save_value_and_policy_function_plot(POLICY_ITERATION)
+    gridworld.save_simulated_paths_plot()
 
     gridworld.run_q_learning()
     gridworld.save_value_and_policy_function_plot(Q_LEARNING)
