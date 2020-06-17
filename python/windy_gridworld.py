@@ -390,33 +390,31 @@ class WindyGridworld:
 
     def get_simulated_path(self, initial_xy, max_iterations=1000):
 
-        xs = [initial_xy[0]]
-        ys = [initial_xy[1]]
-
         x, y = initial_xy
+
+        xs = [x]
+        ys = [y]
 
         for time in range(max_iterations):
 
             action = tuple(self.policy[POLICY_ITERATION][x, y])
             x, y = self.simulate_xy_next(x, y, action)
 
-            # Note: jitter randomly so that the simulated paths aren't exactly on top of each other when plotting
             xs.append(x)
             ys.append(y)
 
             if self.is_target_location(x, y):
-
                 return xs, ys
 
         return xs, ys
 
-    def save_simulated_paths_plot(self, algorithm=POLICY_ITERATION, n_simulations=1000):
+    def save_simulated_paths_plot(self, n_simulations=1000, alpha=0.05):
 
         fig, ax = plt.subplots()
 
         # Note: imshow puts first index along vertical axis,
         # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
-        im = ax.imshow(np.transpose(self.value[algorithm]), origin="lower")
+        im = ax.imshow(np.transpose(self.value[POLICY_ITERATION]), origin="lower")
 
         cbar = ax.figure.colorbar(im, ax=ax)
         cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
@@ -427,14 +425,14 @@ class WindyGridworld:
         for _ in range(n_simulations):
     
             xs, ys = self.get_simulated_path(initial_xy=(0, 0))
-            plt.plot(xs, ys, color="black", alpha=0.1)
+            plt.plot(xs, ys, color="black", alpha=alpha)
 
-            xs, ys = self.get_simulated_path(initial_xy=(0, 6))
-            plt.plot(xs, ys, color="blue", alpha=0.1)
+            xs, ys = self.get_simulated_path(initial_xy=(0, 7))
+            plt.plot(xs, ys, color="blue", alpha=alpha)
 
         outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), PLOT_DIR)
 
-        outfile = "test.png"
+        outfile = "simulated_paths.png"
         plt.savefig(os.path.join(outdir, outfile))
 
     def get_wind_description(self):
