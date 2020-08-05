@@ -212,8 +212,12 @@ class WindyGridworld:
 
                     locations_with_ties.append((x, y))
 
-                    optimal_action_indices = np.where(np.isclose(candidate_values, optimal_value))[0]
-                    alternate_optimal_actions.append([ACTIONS[index] for index in optimal_action_indices[1:]])
+                    optimal_action_indices = np.where(
+                        np.isclose(candidate_values, optimal_value)
+                    )[0]
+                    alternate_optimal_actions.append(
+                        [ACTIONS[index] for index in optimal_action_indices[1:]]
+                    )
 
         return locations_with_ties, alternate_optimal_actions
 
@@ -268,7 +272,10 @@ class WindyGridworld:
 
             self.policy[POLICY_ITERATION] = updated_policy
 
-        self.locations_with_ties, self.alternate_optimal_actions = self.get_locations_with_ties_in_policy_function()
+        (
+            self.locations_with_ties,
+            self.alternate_optimal_actions,
+        ) = self.get_locations_with_ties_in_policy_function()
 
     def get_random_xy(self):
 
@@ -408,32 +415,36 @@ class WindyGridworld:
 
         return xs, ys
 
-    def save_simulated_paths_plot(self, n_simulations=1000, alpha=0.05):
-
-        fig, ax = plt.subplots()
-
-        # Note: imshow puts first index along vertical axis,
-        # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
-        im = ax.imshow(np.transpose(self.value[POLICY_ITERATION]), origin="lower")
-
-        cbar = ax.figure.colorbar(im, ax=ax)
-        cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
-
-        plt.xlabel("x")
-        plt.ylabel("y")
-
-        for _ in range(n_simulations):
-    
-            xs, ys = self.get_simulated_path(initial_xy=(0, 0))
-            plt.plot(xs, ys, color="black", alpha=alpha)
-
-            xs, ys = self.get_simulated_path(initial_xy=(0, 7))
-            plt.plot(xs, ys, color="blue", alpha=alpha)
+    def save_plots_of_simulated_paths(self, n_simulations=1000, alpha=0.05):
 
         outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), PLOT_DIR)
 
-        outfile = "simulated_paths.png"
-        plt.savefig(os.path.join(outdir, outfile))
+        for initial_xy in [(0, 0), (0, 7), (7, 1), (9, 10)]:
+
+            fig, ax = plt.subplots()
+
+            # Note: imshow puts first index along vertical axis,
+            # so we swap axes / transpose to put y along the vertical axis and x along the horizontal
+            im = ax.imshow(np.transpose(self.value[POLICY_ITERATION]), origin="lower")
+
+            cbar = ax.figure.colorbar(im, ax=ax)
+            cbar.ax.set_ylabel("value V(s)", rotation=-90, va="bottom")
+
+            plt.xlabel("x")
+            plt.ylabel("y")
+
+            for _ in range(n_simulations):
+
+                xs, ys = self.get_simulated_path(initial_xy)
+                plt.plot(xs, ys, color="black", alpha=alpha)
+
+            plt.title(f"Simulated Paths Starting From {initial_xy}")
+
+            outfile = (
+                f"simulated_paths_starting_from_{initial_xy[0]}_{initial_xy[1]}.png"
+            )
+            plt.savefig(os.path.join(outdir, outfile))
+            plt.clf()
 
     def get_wind_description(self):
 
@@ -476,10 +487,14 @@ class WindyGridworld:
 
         if algorithm == POLICY_ITERATION:
 
-            for location_with_ties, alternate_optimal_actions in zip(self.locations_with_ties, self.alternate_optimal_actions):
+            for location_with_ties, alternate_optimal_actions in zip(
+                self.locations_with_ties, self.alternate_optimal_actions
+            ):
 
                 actions_x, actions_y = list(zip(*alternate_optimal_actions))
-                ax.quiver(location_with_ties[0], location_with_ties[1], actions_x, actions_y)
+                ax.quiver(
+                    location_with_ties[0], location_with_ties[1], actions_x, actions_y
+                )
 
         plt.xlabel("x")
         plt.ylabel("y")
@@ -494,7 +509,9 @@ class WindyGridworld:
 
         wind_description_for_filename = wind_description.lower().replace(" ", "_")
 
-        outfile = PLOT_FILENAME.format(algorithm=algorithm, wind_description=wind_description_for_filename)
+        outfile = PLOT_FILENAME.format(
+            algorithm=algorithm, wind_description=wind_description_for_filename
+        )
         plt.savefig(os.path.join(outdir, outfile))
 
 
@@ -504,7 +521,7 @@ def main():
 
     gridworld.run_policy_iteration()
     gridworld.save_value_and_policy_function_plot(POLICY_ITERATION)
-    gridworld.save_simulated_paths_plot()
+    gridworld.save_plots_of_simulated_paths()
 
     gridworld.run_q_learning()
     gridworld.save_value_and_policy_function_plot(Q_LEARNING)
@@ -519,7 +536,9 @@ def main():
 
     # Notice that the value function is generally (but not always!) larger in the windless case
     print("Differences in value function (value without wind - value with wind)")
-    diff_in_value = windless_gridworld.value[POLICY_ITERATION] - gridworld.value[POLICY_ITERATION]
+    diff_in_value = (
+        windless_gridworld.value[POLICY_ITERATION] - gridworld.value[POLICY_ITERATION]
+    )
     print(diff_in_value.round(1))
 
 
