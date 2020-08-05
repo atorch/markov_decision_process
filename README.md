@@ -62,3 +62,9 @@ the reverse can be true.
 * It is sometimes optimal for the agent to walk straight towards the obstacle!
 
 ![Simulation](python/plots/simulated_paths_starting_from_0_0.png)
+
+![Simulation](python/plots/simulated_paths_starting_from_0_7.png)
+
+![Simulation](python/plots/simulated_paths_starting_from_7_1.png)
+
+![Simulation](python/plots/simulated_paths_starting_from_9_10.png)
