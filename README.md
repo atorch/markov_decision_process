@@ -60,3 +60,5 @@ certain values of the wind probabilities and at certain points in the state spac
 the reverse can be true.
 
 * It is sometimes optimal for the agent to walk straight towards the obstacle!
+
+![Simulation](python/plots/simulated_paths_starting_from_0_0.png)
