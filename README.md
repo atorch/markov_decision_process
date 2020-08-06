@@ -58,7 +58,7 @@ There exist multiple paths of equal length that avoid the obstacles and reach th
 target point in an optimal number of steps, and the agent has no reason to prefer
 one such path above another. Adding wind breaks _most_ (but not all) ties:
 with wind, the agent generally prefers to remain far from the obstacles (to reduce the
-probability of being blow into one), but also has the possibility of using the wind
+probability of being blown into one), but also has the possibility of using the wind
 advantageously (by moving horizontally and letting the wind move the agent vertically).
 
 * The value function is _generally_ lower with wind (because the agent now faces
