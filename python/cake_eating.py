@@ -10,6 +10,7 @@ def reward_function(action):
     # Note: the agent's action is the amount they consume in the current period
     #  If they consume nothing, they receive a reward of negative infinity (they die!)
     #  If they consume everything, they receive a large reward in the current period, but they die tomorrow
+    #  The optimal action must therefore be to consume something (but not everything)
     return np.log(action)
 
 
@@ -52,10 +53,15 @@ def get_estimated_values(states, approximate_value_function):
     return rewards + DISCOUNT_FACTOR * continuation_values
 
 
+def get_coefficients(linear_regression):
+
+    return np.vstack([linear_regression.intercept_, linear_regression.coef_])
+
+
 def calculate_approximate_solution(max_iterations=10000, n_simulations=2000):
 
     X = np.zeros((n_simulations, 1))
-    y = np.zeros((n_simulations, ))
+    y = np.zeros((n_simulations,))
     approximate_value_function = LinearRegression()
     approximate_value_function.fit(X=X, y=y)
 
@@ -66,21 +72,26 @@ def calculate_approximate_solution(max_iterations=10000, n_simulations=2000):
         estimated_values = get_estimated_values(states, approximate_value_function)
         y = estimated_values
 
-        previous_coefficients = np.vstack([approximate_value_function.intercept_, approximate_value_function.coef_])
+        previous_coefficients = get_coefficients(approximate_value_function)
 
         approximate_value_function.fit(X=X, y=y)
-        current_coefficients = np.vstack([approximate_value_function.intercept_, approximate_value_function.coef_])
+        current_coefficients = get_coefficients(approximate_value_function)
 
-        if np.allclose(current_coefficients, previous_coefficients, rtol=1e-03, atol=1e-05):
+        if np.allclose(
+            current_coefficients, previous_coefficients, rtol=1e-03, atol=1e-05
+        ):
             print(f"converged at iteration {i}!")
             break
 
-    print(f"true value is {(1 / (1 - DISCOUNT_FACTOR))}, estimate is {approximate_value_function.coef_}")
+    print(
+        f"true value is {(1 / (1 - DISCOUNT_FACTOR))}, estimate is {approximate_value_function.coef_}"
+    )
 
 
 def main():
 
     calculate_approximate_solution()
+
 
 if __name__ == "__main__":
     main()
