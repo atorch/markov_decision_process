@@ -2,6 +2,13 @@
 
 Examples of Markov Decision Processes (MDPs)
 
+# Cake Eating Problem
+
+TODO Explain setup:
+Discrete time (infinite), continuous action space (infinite, one dimensional, but bounded), continuous state space (one dimensional, infinite, unbounded)
+This _could_ be a difficult problem to solve numerically. Interestingly, it can be solved (exactly) by hand, with pen and paper!
+Can compare approximate solution to the true solution and see how your MDP solver performed.
+
 # Windy Gridworld
 
 Solutions:
