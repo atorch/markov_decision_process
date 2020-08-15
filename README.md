@@ -17,6 +17,10 @@ Related PDFs:
 * http://users.ox.ac.uk/~exet2581/recursive/dp_mat.pdf describes a similar problem (a cake eating problem with a _finite_ time horizon), and
 * http://www2.econ.iastate.edu/tesfatsi/dpintro.cooper.pdf describes this exact problem (the infinite-horizon cake eating problem).
 
+Solutions:
+
+* [cake_eating.py](python/cake_eating.py)
+
 # Windy Gridworld
 
 Solutions:

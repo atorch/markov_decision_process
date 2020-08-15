@@ -24,12 +24,14 @@ def optimal_policy(state):
     #  They need to decide how much to consume today and how much to leave for future periods
     #  The agent lives forever and is unemployed: their wealth can never increase; it can only
     #  decrease depending on how much they consume. The optimal policy can be solved with
-    #  pen and paper
+    #  pen and paper. A more patient agent (with a higher discount factor) consumes less today
+    #  and saves more for future periods
     return (1 - DISCOUNT_FACTOR) * state
 
 
 def optimal_value_function(state):
 
+    # Note: this is the value of pursuing the optimal policy
     return (1 / (1 - DISCOUNT_FACTOR)) * np.log(state) + VALUE_FUNCTION_CONSTANT_TERM
 
 
@@ -53,6 +55,7 @@ def get_estimated_values(states, approximate_value_function):
 
     continuation_values = approximate_value_function.predict(log_next_states)
 
+    # Note: this is the Bellman equation
     return rewards + DISCOUNT_FACTOR * continuation_values
 
 
