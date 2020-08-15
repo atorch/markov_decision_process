@@ -3,6 +3,10 @@ from sklearn.linear_model import LinearRegression
 
 
 DISCOUNT_FACTOR = 0.9
+VALUE_FUNCTION_CONSTANT_TERM = (
+    np.log(1 - DISCOUNT_FACTOR)
+    + np.log(DISCOUNT_FACTOR) * DISCOUNT_FACTOR / (1 - DISCOUNT_FACTOR)
+) / (1 - DISCOUNT_FACTOR)
 
 
 def reward_function(action):
@@ -26,8 +30,7 @@ def optimal_policy(state):
 
 def optimal_value_function(state):
 
-    # TODO This isn't correct, there's also a constant term
-    return (1 / (1 - DISCOUNT_FACTOR)) * np.log(state)
+    return (1 / (1 - DISCOUNT_FACTOR)) * np.log(state) + VALUE_FUNCTION_CONSTANT_TERM
 
 
 def get_next_state(state, action):
@@ -78,7 +81,7 @@ def calculate_approximate_solution(max_iterations=10000, n_simulations=2000):
         current_coefficients = get_coefficients(approximate_value_function)
 
         if np.allclose(
-            current_coefficients, previous_coefficients, rtol=1e-03, atol=1e-05
+            current_coefficients, previous_coefficients, rtol=1e-04, atol=1e-06
         ):
             print(f"converged at iteration {i}!")
             break
@@ -86,6 +89,11 @@ def calculate_approximate_solution(max_iterations=10000, n_simulations=2000):
     print(
         f"true value is {(1 / (1 - DISCOUNT_FACTOR))}, estimate is {approximate_value_function.coef_}"
     )
+    print(
+        f"true value is {VALUE_FUNCTION_CONSTANT_TERM}, estimate is {approximate_value_function.intercept_}"
+    )
+
+    # TODO Plot correct & estimated value function & policy function
 
 
 def main():
