@@ -2,6 +2,25 @@
 
 Examples of Markov Decision Processes (MDPs)
 
+# Cake Eating Problem
+
+The agent's state is their wealth (amount of cake), and their action is how much to consume in the current period.
+Time is discrete and infinite (the problem goes on forever), and state transitions are deterministic (there is no randomness).
+
+The state space and action space are each infinite (which tends to make a problem difficult)
+but only one dimensional (which makes a problem simple: there is no curse of dimensionality).
+Interestingly, the cake eating problem can be solved (exactly) by hand, with pen and paper, and
+this means we can compare approximate numerical solutions to the true solution and see how our MDP solver performed.
+
+Related PDFs:
+
+* http://users.ox.ac.uk/~exet2581/recursive/dp_mat.pdf describes a similar problem (a cake eating problem with a _finite_ time horizon), and
+* http://www2.econ.iastate.edu/tesfatsi/dpintro.cooper.pdf describes this exact problem (the infinite-horizon cake eating problem).
+
+Solutions:
+
+* [cake_eating.py](python/cake_eating.py)
+
 # Windy Gridworld
 
 Solutions:
@@ -51,7 +70,7 @@ There exist multiple paths of equal length that avoid the obstacles and reach th
 target point in an optimal number of steps, and the agent has no reason to prefer
 one such path above another. Adding wind breaks _most_ (but not all) ties:
 with wind, the agent generally prefers to remain far from the obstacles (to reduce the
-probability of being blow into one), but also has the possibility of using the wind
+probability of being blown into one), but also has the possibility of using the wind
 advantageously (by moving horizontally and letting the wind move the agent vertically).
 
 * The value function is _generally_ lower with wind (because the agent now faces
