@@ -4,14 +4,18 @@ Examples of Markov Decision Processes (MDPs)
 
 # Cake Eating Problem
 
-TODO Explain setup:
+The agent's state is their wealth (amount of cake), and their action is how much to consume in the current period.
+Time is discrete and infinite (the problem goes on forever), and state transitions are deterministic (there is no randomness).
 
-Discrete time (infinite), deterministic state transitions (no randomness), continuous action space (infinite, one dimensional, but bounded), continuous state space (one dimensional, infinite, unbounded)
-This _could_ be a difficult problem to solve numerically. Interestingly, it can be solved (exactly) by hand, with pen and paper!
-Can compare approximate solution to the true solution and see how your MDP solver performed.
+The state space and action space are each infinite (which tends to make a problem difficult)
+but only one dimensional (which makes a problem simple: there is no curse of dimensionality).
+Interestingly, the cake eating problem can be solved (exactly) by hand, with pen and paper, and
+this means we can compare approximate numerical solutions to the true solution and see how our MDP solver performed.
 
-http://users.ox.ac.uk/~exet2581/recursive/dp_mat.pdf describes a similar problem (a cake eating problem with a _finite_ time horizon),
-and http://www2.econ.iastate.edu/tesfatsi/dpintro.cooper.pdf describes this exact problem (the infinite-horizon cake eating problem)
+Related PDFs:
+
+* http://users.ox.ac.uk/~exet2581/recursive/dp_mat.pdf describes a similar problem (a cake eating problem with a _finite_ time horizon), and
+* http://www2.econ.iastate.edu/tesfatsi/dpintro.cooper.pdf describes this exact problem (the infinite-horizon cake eating problem).
 
 # Windy Gridworld
 
