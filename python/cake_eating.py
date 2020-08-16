@@ -161,7 +161,7 @@ def save_value_function_plot(
     approximate_value_function_fine_grid,
 ):
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(10, 8))
 
     # Note: wealth is the state variable
     wealth = np.linspace(0.01, 100, 1000)
@@ -184,7 +184,7 @@ def save_value_function_plot(
         wealth[1:-3],
         approximate_value[1:-3],
         "--",
-        label="estimated value function (using log-linear regression & exact action solution)",
+        label="estimated value function (using log-linear regression & first order condition for action)",
     )
     plt.plot(
         wealth[1:-3],
