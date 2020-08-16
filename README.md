@@ -21,6 +21,8 @@ Solutions:
 
 * [cake_eating.py](python/cake_eating.py)
 
+![Value Function](python/plots/cake_eating_problem_value_function.png)
+
 # Windy Gridworld
 
 Solutions:

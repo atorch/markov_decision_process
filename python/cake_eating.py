@@ -1,3 +1,6 @@
+import os
+
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
@@ -7,6 +10,13 @@ VALUE_FUNCTION_CONSTANT_TERM = (
     np.log(1 - DISCOUNT_FACTOR)
     + np.log(DISCOUNT_FACTOR) * DISCOUNT_FACTOR / (1 - DISCOUNT_FACTOR)
 ) / (1 - DISCOUNT_FACTOR)
+
+PLOT_DIR = "plots"
+
+# Note: these grids are used for naive searches over the action space
+#  Where action = fraction_consumed * wealth
+FRACTION_CONSUMED_GRID_COARSE = np.linspace(0.01, 0.99, 4)
+FRACTION_CONSUMED_GRID_FINE = np.linspace(0.01, 0.99, 8)
 
 
 def reward_function(action):
@@ -43,10 +53,50 @@ def get_next_state(state, action):
     return state - action
 
 
-def get_estimated_values(states, approximate_value_function):
+def optimal_policy_grid_search(
+    state, approximate_value_function, fraction_consumed_grid
+):
 
-    # Hack. TODO: replace optimal policy with a search for optimal policy
-    actions = optimal_policy(states)
+    # Note: the grid is in [0, 1], and the action is equal to wealth * fraction consumed
+    state_mesh, fraction_consumed_mesh = np.meshgrid(state, fraction_consumed_grid)
+
+    actions = state_mesh * fraction_consumed_mesh
+    rewards = reward_function(actions)
+
+    next_states = get_next_state(state_mesh, actions)
+
+    log_next_states = np.log(next_states.reshape(-1, 1))
+    continuation_values = approximate_value_function.predict(log_next_states).reshape(
+        actions.shape
+    )
+
+    candidate_values = rewards + DISCOUNT_FACTOR * continuation_values
+
+    argmax_candidate_values = np.argmax(candidate_values, axis=0)
+
+    return actions[argmax_candidate_values, range(state.size)]
+
+
+def optimal_policy_given_approximate_value_function(state, approximate_value_function):
+
+    log_wealth_coefficient = approximate_value_function.coef_[0]
+
+    # Note: on the first iteration, the coefficient on log wealth is zero (future wealth has no value),
+    #  so, without this shortcut, the agent would consume everything immediately and get a -Inf continuation value
+    if log_wealth_coefficient <= 0.0:
+        return state * 0.99
+
+    # Note: to arrive at this policy, write down the Bellman equation using the
+    #  approximate value function as the continuation value, and optimize with respect to the action
+    return state / (DISCOUNT_FACTOR * log_wealth_coefficient + 1)
+
+
+def get_estimated_values(
+    states, approximate_value_function, get_optimal_policy, **kwargs
+):
+
+    actions = get_optimal_policy(states, approximate_value_function, **kwargs)
+
     rewards = reward_function(actions)
     next_states = get_next_state(states, actions)
 
@@ -64,18 +114,24 @@ def get_coefficients(linear_regression):
     return np.vstack([linear_regression.intercept_, linear_regression.coef_])
 
 
-def calculate_approximate_solution(max_iterations=10000, n_simulations=2000):
+def calculate_approximate_solution(
+    get_optimal_policy, max_iterations=10000, n_simulations=2000, **kwargs
+):
 
     X = np.zeros((n_simulations, 1))
     y = np.zeros((n_simulations,))
     approximate_value_function = LinearRegression()
     approximate_value_function.fit(X=X, y=y)
 
+    print(f"running solver using {get_optimal_policy} to find actions given estimated value function")
+
     for i in range(max_iterations):
 
         states = np.random.uniform(low=0.001, high=5.0, size=n_simulations)
         X[:, 0] = np.log(states)
-        estimated_values = get_estimated_values(states, approximate_value_function)
+        estimated_values = get_estimated_values(
+            states, approximate_value_function, get_optimal_policy, **kwargs
+        )
         y = estimated_values
 
         previous_coefficients = get_coefficients(approximate_value_function)
@@ -96,12 +152,79 @@ def calculate_approximate_solution(max_iterations=10000, n_simulations=2000):
         f"true value is {VALUE_FUNCTION_CONSTANT_TERM}, estimate is {approximate_value_function.intercept_}"
     )
 
-    # TODO Plot correct & estimated value function & policy function
+    return approximate_value_function
+
+
+def save_value_function_plot(
+    approximate_value_function,
+    approximate_value_function_coarse_grid,
+    approximate_value_function_fine_grid,
+):
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Note: wealth is the state variable
+    wealth = np.linspace(0.01, 100, 1000)
+    log_wealth = np.log(wealth).reshape(-1, 1)
+
+    correct_value = optimal_value_function(wealth)
+    approximate_value = approximate_value_function.predict(log_wealth)
+    approximate_value_coarse_grid = approximate_value_function_coarse_grid.predict(
+        log_wealth
+    )
+    approximate_value_fine_grid = approximate_value_function_fine_grid.predict(
+        log_wealth
+    )
+
+    plt.plot(wealth, correct_value, label="true value function (analytical solution)")
+
+    # Note: don't show the left and right ends of the estimated value functions
+    #  so that they don't entirely cover/hide the true value function on the plot
+    plt.plot(
+        wealth[1:-3],
+        approximate_value[1:-3],
+        "--",
+        label="estimated value function (using log-linear regression & exact action solution)",
+    )
+    plt.plot(
+        wealth[1:-3],
+        approximate_value_coarse_grid[1:-3],
+        ":",
+        label="estimated value function (using log-linear regression & coarse grid search for action)",
+    )
+    plt.plot(
+        wealth[1:-3],
+        approximate_value_fine_grid[1:-3],
+        ":",
+        label="estimated value function (using log-linear regression & fine grid search for action)",
+    )
+
+    plt.xlabel("wealth (state variable)")
+    plt.ylabel("value function")
+    ax.legend()
+
+    outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), PLOT_DIR)
+    outfile = "cake_eating_problem_value_function.png"
+    plt.savefig(os.path.join(outdir, outfile))
 
 
 def main():
 
-    calculate_approximate_solution()
+    approximate_value_function = calculate_approximate_solution(
+        optimal_policy_given_approximate_value_function
+    )
+    approximate_value_function_coarse_grid = calculate_approximate_solution(
+        optimal_policy_grid_search, fraction_consumed_grid=FRACTION_CONSUMED_GRID_COARSE
+    )
+    approximate_value_function_fine_grid = calculate_approximate_solution(
+        optimal_policy_grid_search, fraction_consumed_grid=FRACTION_CONSUMED_GRID_FINE
+    )
+
+    save_value_function_plot(
+        approximate_value_function,
+        approximate_value_function_coarse_grid,
+        approximate_value_function_fine_grid,
+    )
 
 
 if __name__ == "__main__":

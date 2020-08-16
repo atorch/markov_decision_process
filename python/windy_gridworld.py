@@ -27,7 +27,7 @@ SARSA = "sarsa"
 Q_LEARNING = "q_learning"
 
 PLOT_FILENAME = "value_and_policy_functions_solved_by_{algorithm}_{wind_description}"
-PLOT_DIR = "./plots"
+PLOT_DIR = "plots"
 
 PR_WIND_UP = 0.3
 PR_WIND_DOWN = 0.3
