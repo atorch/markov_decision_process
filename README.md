@@ -2,6 +2,19 @@
 
 Examples of Markov Decision Processes (MDPs)
 
+## Running the Python code
+
+The Python code uses [uv](https://docs.astral.sh/uv/) to manage dependencies
+(pinned in [python/uv.lock](python/uv.lock)). From the `python` directory:
+
+```bash
+uv run python cake_eating.py
+uv run python windy_gridworld.py
+```
+
+The first `uv run` creates a virtual environment and installs the locked dependencies.
+Both scripts save their plots to [python/plots](python/plots).
+
 # Cake Eating Problem
 
 The agent's state is their wealth (amount of cake), and their action is how much to consume in the current period.
