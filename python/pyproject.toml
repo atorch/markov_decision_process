@@ -1,0 +1,14 @@
+[project]
+name = "markov-decision-process"
+version = "0.1.0"
+description = "Examples of Markov Decision Processes: cake eating and windy gridworld"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.10",
+    "numpy>=2.3",
+    "scikit-learn>=1.7",
+]
+
+[tool.uv]
+# These are standalone scripts, not an installable package
+package = false
