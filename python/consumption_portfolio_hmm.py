@@ -60,7 +60,7 @@ from consumption_savings import (
     remaining_lifetime_discount_sum,
     shade_retirement,
 )
-from hmm import GaussianHMM
+from hmm import GaussianHMM, stationary_distribution
 
 # Coefficient of relative risk aversion. consumption_savings.py uses log utility (gamma = 1), but a log utility agent
 # is a very aggressive investor: with these return parameters they'd hold 100% equities in calm times no matter what,
@@ -164,8 +164,9 @@ def iid_version(market):
 # Employment risk. Index 0 is employed, index 1 is unemployed. Every year, an employed worker loses their job with
 # a separation probability, and an unemployed worker finds a job with a job finding probability. Both can depend on
 # the regime of the year in which the transition happens, which is the same regime that generates that year's returns:
-# in turbulent years, job losses are more likely and jobs are harder to find. Long run unemployment rates
-# are about 5% in calm years and 10% in turbulent years
+# in turbulent years, job losses are more likely and jobs are harder to find. If a regime lasted forever, its
+# unemployment rate would converge to about 5% (calm) or 10% (turbulent). Because regimes switch, the average
+# unemployment rates in calm and turbulent years are about 5% and 9%, and 6% overall
 EMPLOYED, UNEMPLOYED = 0, 1
 SEPARATION_PROBABILITIES = (0.03, 0.05)
 JOB_FINDING_PROBABILITIES = (0.6, 0.45)
@@ -208,16 +209,37 @@ class EmploymentRisk:
         separation, finding = self.separation_probabilities, self.job_finding_probabilities
         return np.stack([np.stack([1 - separation, separation], axis=-1), np.stack([finding, 1 - finding], axis=-1)], axis=1)
 
+    def joint_stationary_distribution(self, hmm):
+
+        # (K, 2): the long run distribution of (regime, employment status). The pair is a Markov chain: next year's
+        # regime depends on this year's, and next year's employment status depends on this year's and on next year's regime
+        employment = self.transition_matrices().transpose(1, 0, 2)  # (j, k', j')
+        transitions = hmm.transition_matrix[:, np.newaxis, :, np.newaxis] * employment[np.newaxis]  # (k, j, k', j')
+        n_regimes = hmm.n_regimes
+        joint = transitions.reshape(n_regimes * 2, n_regimes * 2)  # Rows: (k, j), columns: (k', j')
+
+        return stationary_distribution(joint).reshape(n_regimes, 2)
+
+    def long_run_unemployment_rate(self, hmm):
+        return self.joint_stationary_distribution(hmm)[:, UNEMPLOYED].sum()
+
     def regime_independent(self, hmm, n_regimes=None):
 
-        # The same transition probabilities in every regime (the long run averages over regimes), so that employment
-        # risk is independent of returns and carries no information about the regime. n_regimes=1 gives a version
-        # for an i.i.d. market
-        weights = hmm.initial_distribution
+        # The same transition probabilities in every regime, so that employment risk is independent of returns and
+        # carries no information about the regime. n_regimes=1 gives a version for an i.i.d. market.
+        # Each probability is the long run average of the regime-dependent one over the years in which it applies:
+        # the separation probability is averaged over next year's regime for workers who are employed this year,
+        # and the job finding probability over next year's regime for workers who are unemployed this year. In the
+        # long run, flows into and out of unemployment balance, so this matches both the long run unemployment rate
+        # and the frequency of job losses: only the correlation between unemployment and the regime changes
+        joint = self.joint_stationary_distribution(hmm)  # (K, 2)
+        next_regime = joint.T @ hmm.transition_matrix  # (2, K): Pr(this year's status, next year's regime)
+        next_regime = next_regime / next_regime.sum(axis=1, keepdims=True)
         n_regimes = hmm.n_regimes if n_regimes is None else n_regimes
+
         return EmploymentRisk(
-            np.full(n_regimes, weights @ self.separation_probabilities),
-            np.full(n_regimes, weights @ self.job_finding_probabilities),
+            np.full(n_regimes, next_regime[EMPLOYED] @ self.separation_probabilities),
+            np.full(n_regimes, next_regime[UNEMPLOYED] @ self.job_finding_probabilities),
             self.replacement_rate,
             self.reemployment_wage_factor,
             self.learn_from_employment,

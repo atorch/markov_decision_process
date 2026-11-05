@@ -126,8 +126,34 @@ def test_employment_transition_matrices():
     # Unemployment is more likely in the turbulent regime
     assert risk.long_run_unemployment_rates()[1] > risk.long_run_unemployment_rates()[0]
 
-    constant = risk.regime_independent(bank_and_equity_market().hmm)
+    hmm = bank_and_equity_market().hmm
+    constant = risk.regime_independent(hmm)
     np.testing.assert_allclose(np.ptp(constant.transition_matrices(), axis=0), 0.0)
+
+    # The regime-independent version has the same long run unemployment rate
+    np.testing.assert_allclose(constant.long_run_unemployment_rate(hmm), risk.long_run_unemployment_rate(hmm))
+    np.testing.assert_allclose(constant.long_run_unemployment_rates(), risk.long_run_unemployment_rate(hmm))
+
+
+def test_joint_stationary_distribution_matches_simulation():
+
+    hmm = bank_and_equity_market().hmm
+    risk = EmploymentRisk((0.02, 0.12), (0.65, 0.35))
+    transitions = risk.transition_matrices()
+    rng = np.random.default_rng(0)
+
+    n_chains, n_years = 2000, 200
+    regime = rng.choice(2, size=n_chains, p=hmm.initial_distribution)
+    employment = np.zeros(n_chains, dtype=int)
+    counts = np.zeros((2, 2))
+    for year in range(n_years):
+        regime = (rng.uniform(size=n_chains)[:, None] > np.cumsum(hmm.transition_matrix[regime], axis=1)).sum(axis=1)
+        employment = (rng.uniform(size=n_chains)[:, None] > np.cumsum(transitions[regime, employment], axis=1)).sum(axis=1)
+        if year >= 20:
+            np.add.at(counts, (regime, employment), 1)
+
+    np.testing.assert_allclose(risk.joint_stationary_distribution(hmm), counts / counts.sum(), atol=0.003)
+    np.testing.assert_allclose(risk.joint_stationary_distribution(hmm).sum(axis=1), hmm.initial_distribution)
 
 
 def test_belief_update_uses_employment_transitions():

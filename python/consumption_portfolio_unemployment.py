@@ -3,13 +3,15 @@
 Solves the lifecycle consumption + portfolio model in consumption_portfolio_hmm.py under five scenarios:
 
 * no unemployment risk (the model in consumption_portfolio_hmm.py)
-* moderate unemployment risk (about 5% unemployment in calm years and 10% in turbulent years), either independent of
-  the regime (the same long run average transition probabilities in every regime) or higher in turbulent years
-* severe unemployment risk (3% unemployment in calm years, 26% in turbulent years, and a bigger wage scar when the
-  worker finds a new job), again either independent of the regime or higher in turbulent years
+* moderate unemployment risk (about 5% unemployment in calm years and 9% in turbulent years), either higher in
+  turbulent years or independent of the regime
+* severe unemployment risk (about 4% unemployment in calm years, 21% in turbulent years, and a bigger wage scar when
+  the worker finds a new job), again either higher in turbulent years or independent of the regime
 
-Comparing the "independent" and "higher in turbulent years" versions of each scenario isolates the effect of the
-correlation between job losses and equity returns, holding the average amount of unemployment risk fixed.
+The "independent of the regime" version of each scenario uses the same transition probabilities in every regime,
+calibrated so that the long run unemployment rate and the frequency of job losses are the same as in the "higher in
+turbulent years" version (see EmploymentRisk.regime_independent). Comparing the two isolates the effect of the
+correlation between job losses and equity returns, holding the amount of unemployment risk fixed.
 """
 
 import argparse
