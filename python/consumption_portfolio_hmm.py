@@ -21,6 +21,14 @@ Two more simplifications keep the state space small enough for backward inductio
   agent saves (as a multiple of income), not on how they got there, so we first solve for the best portfolio and the
   expected continuation value on a grid of (savings / income, belief), and then choose consumption by searching
   over a one dimensional grid. This is much cheaper than searching over (consumption, portfolio) pairs.
+
+Optionally (see EmploymentRisk), the worker can lose their job. Employment follows a Markov chain whose transition
+probabilities can depend on the hidden regime, so job losses can be more likely in turbulent years. The agent observes
+their own employment status, so it's part of the state, and when the transition probabilities depend on the regime,
+losing (or finding) a job is also news about the regime, and the agent's belief takes it into account. To keep
+homotheticity, income is tracked as a wage that the worker earns while employed: the unemployed receive a fraction of
+it (unemployment benefits), it doesn't grow while they're unemployed, and they get it back (minus a "scar") when they
+find a new job. The working-age state is then (wealth / wage, employment status, belief).
 """
 
 import argparse
@@ -153,6 +161,78 @@ def iid_version(market):
     return Market(f"{market.name} (i.i.d.)", market.asset_names, GaussianHMM([[1.0]], [mean], [covariance]))
 
 
+# Employment risk. Index 0 is employed, index 1 is unemployed. Every year, an employed worker loses their job with
+# a separation probability, and an unemployed worker finds a job with a job finding probability. Both can depend on
+# the regime of the year in which the transition happens, which is the same regime that generates that year's returns:
+# in turbulent years, job losses are more likely and jobs are harder to find. Long run unemployment rates
+# are about 5% in calm years and 10% in turbulent years
+EMPLOYED, UNEMPLOYED = 0, 1
+SEPARATION_PROBABILITIES = (0.03, 0.05)
+JOB_FINDING_PROBABILITIES = (0.6, 0.45)
+
+# Unemployment benefits (and any other income while unemployed), as a fraction of the wage
+REPLACEMENT_RATE = 0.4
+
+# A worker who finds a new job is paid their old wage (which doesn't grow while they're unemployed) times this factor.
+# Displaced workers' earnings stay well below what they would have been for many years (Jacobson, LaLonde and Sullivan
+# 1993; Davis and von Wachter 2011), and in this model the scar is permanent
+REEMPLOYMENT_WAGE_FACTOR = 0.9
+
+
+@dataclass
+class EmploymentRisk:
+
+    separation_probabilities: tuple  # (K,): Pr(employed -> unemployed | regime)
+    job_finding_probabilities: tuple  # (K,): Pr(unemployed -> employed | regime)
+    replacement_rate: float = REPLACEMENT_RATE
+    reemployment_wage_factor: float = REEMPLOYMENT_WAGE_FACTOR
+
+    # Does the agent use their own employment transitions to update their belief about the regime?
+    # (This only matters when the transition probabilities depend on the regime)
+    learn_from_employment: bool = True
+
+    def __post_init__(self):
+        self.separation_probabilities = np.asarray(self.separation_probabilities, dtype=float)
+        self.job_finding_probabilities = np.asarray(self.job_finding_probabilities, dtype=float)
+        assert self.separation_probabilities.shape == self.job_finding_probabilities.shape
+        assert np.all((0 < self.separation_probabilities) & (self.separation_probabilities < 1))
+        assert np.all((0 < self.job_finding_probabilities) & (self.job_finding_probabilities < 1))
+
+    @property
+    def n_regimes(self):
+        return self.separation_probabilities.size
+
+    def transition_matrices(self):
+
+        # (K, 2, 2): Pr(next employment status | current status, next year's regime)
+        separation, finding = self.separation_probabilities, self.job_finding_probabilities
+        return np.stack([np.stack([1 - separation, separation], axis=-1), np.stack([finding, 1 - finding], axis=-1)], axis=1)
+
+    def regime_independent(self, hmm, n_regimes=None):
+
+        # The same transition probabilities in every regime (the long run averages over regimes), so that employment
+        # risk is independent of returns and carries no information about the regime. n_regimes=1 gives a version
+        # for an i.i.d. market
+        weights = hmm.initial_distribution
+        n_regimes = hmm.n_regimes if n_regimes is None else n_regimes
+        return EmploymentRisk(
+            np.full(n_regimes, weights @ self.separation_probabilities),
+            np.full(n_regimes, weights @ self.job_finding_probabilities),
+            self.replacement_rate,
+            self.reemployment_wage_factor,
+            self.learn_from_employment,
+        )
+
+    def long_run_unemployment_rates(self):
+
+        # The unemployment rate that each regime would converge to if it lasted forever
+        return self.separation_probabilities / (self.separation_probabilities + self.job_finding_probabilities)
+
+
+def regime_dependent_employment_risk(**kwargs):
+    return EmploymentRisk(SEPARATION_PROBABILITIES, JOB_FINDING_PROBABILITIES, **kwargs)
+
+
 class BeliefGrid:
 
     # A grid over beliefs (probability vectors over K regimes), parameterized by the probabilities of regimes 1, ..., K - 1
@@ -197,19 +277,43 @@ def interpolate(axes, table, coordinates):
 
 class LifecycleModel:
 
-    def __init__(self, market, risk_aversion=RISK_AVERSION, max_risky_share=1.0):
+    def __init__(self, market, risk_aversion=RISK_AVERSION, max_risky_share=1.0, employment=None):
         self.market = market
         self.hmm = market.hmm
         self.gamma = risk_aversion
         self.risky_share_grid = RISKY_SHARE_GRID * max_risky_share
         self.belief_grid = BeliefGrid(self.hmm.n_regimes)
         self._build_quadrature()
+        self._build_employment(employment)
 
-        # Solution, filled in by solve(). Working ages: inverted value fn on (wealth ratio, belief) and inverted
-        # post-decision value on (savings ratio, belief). Retirement ages: value coefficient u(age, belief)
+        # Solution, filled in by solve(). Working ages: inverted value fn on (employment, wealth ratio, belief) and
+        # inverted post-decision value on (employment, savings ratio, belief). Retirement ages: value coefficient u(age, belief)
         self.inverted_value = {}
         self.inverted_post_decision_value = {}
         self.retired_value = {}
+
+    def _build_employment(self, employment):
+
+        # Employment statuses j = 0, ..., J - 1, with J = 1 (always employed) when there's no employment risk
+        # employment_transitions[k, j, j'] = Pr(next status j' | current status j, next year's regime k)
+        # income_multipliers[j]: income as a multiple of the wage. wage_growth[j][j']: (growth factors, probabilities)
+        # for the wage, from one year to the next: employed workers get random raises, the unemployed don't, and a
+        # worker who finds a job gets their old wage times the reemployment factor
+        self.employment = employment
+        raises = (1 + RAISE_RATES, RAISE_RATE_PROBABILITIES)
+        if employment is None:
+            self.employment_transitions = np.ones((self.hmm.n_regimes, 1, 1))
+            self.income_multipliers = np.ones(1)
+            self.wage_growth = [[raises]]
+            self.learn_from_employment = False
+        else:
+            assert employment.n_regimes == self.hmm.n_regimes
+            self.employment_transitions = employment.transition_matrices()
+            self.income_multipliers = np.array([1.0, employment.replacement_rate])
+            no_change, reemployed = (np.ones(1), np.ones(1)), (np.array([employment.reemployment_wage_factor]), np.ones(1))
+            self.wage_growth = [[raises, no_change], [reemployed, no_change]]
+            self.learn_from_employment = employment.learn_from_employment
+        self.n_employment_states = self.income_multipliers.size
 
     def _build_quadrature(self):
 
@@ -230,6 +334,20 @@ class LifecycleModel:
 
         self.log_return_nodes = log_returns
         self.gross_return_nodes = np.exp(log_returns)
+
+    def update_beliefs(self, beliefs, log_returns, employment=None, next_employment=None):
+
+        # The filter: next year's belief after observing next year's returns and, when the agent learns from it,
+        # their own employment transition. Vectorized: beliefs (..., K), log_returns (..., N), employment and
+        # next_employment are ints or arrays that broadcast against beliefs[..., 0]
+        next_beliefs, _ = self.hmm.update(beliefs, log_returns)
+        if self.learn_from_employment and employment is not None:
+            # Bayes' rule again: multiply by the likelihood of the employment transition under each regime
+            likelihood = np.moveaxis(self.employment_transitions[:, employment, next_employment], 0, -1)
+            next_beliefs = next_beliefs * likelihood
+            next_beliefs = next_beliefs / next_beliefs.sum(axis=-1, keepdims=True)
+
+        return next_beliefs
 
     # Utility and value fn transformations
 
@@ -268,19 +386,19 @@ class LifecycleModel:
     def post_decision_scale(self, age):
         return DISCOUNT_FACTOR * remaining_lifetime_discount_sum(age + 1)
 
-    def working_value(self, wealth_ratio, beliefs, age):
+    def working_value(self, wealth_ratio, beliefs, age, employment=EMPLOYED):
 
-        # v(wealth / income, age, belief) by interpolation; beliefs has shape (..., K)
+        # v_j(wealth / wage, age, belief) by interpolation; beliefs has shape (..., K), employment j is an int
         coordinates = [wealth_ratio] + [beliefs[..., j] for j in range(1, self.hmm.n_regimes)]
-        inverted = interpolate([WEALTH_RATIO_GRID] + self.belief_grid.axes, self.inverted_value[age], coordinates)
+        inverted = interpolate([WEALTH_RATIO_GRID] + self.belief_grid.axes, self.inverted_value[age][employment], coordinates)
 
         return self.uninvert(inverted, self.value_scale(age))
 
-    def post_decision_value(self, savings_ratio, beliefs, age):
+    def post_decision_value(self, savings_ratio, beliefs, age, employment=EMPLOYED):
 
         coordinates = [savings_ratio] + [beliefs[..., j] for j in range(1, self.hmm.n_regimes)]
         inverted = interpolate(
-            [SAVINGS_RATIO_GRID] + self.belief_grid.axes, self.inverted_post_decision_value[age], coordinates
+            [SAVINGS_RATIO_GRID] + self.belief_grid.axes, self.inverted_post_decision_value[age][employment], coordinates
         )
 
         return self.uninvert(inverted, self.post_decision_scale(age))
@@ -290,36 +408,27 @@ class LifecycleModel:
         coordinates = [beliefs[..., j] for j in range(1, self.hmm.n_regimes)]
         return interpolate(self.belief_grid.axes, self.retired_value[age], coordinates)
 
-    def expected_next_value(self, savings_ratio, beliefs, risky_shares, age):
+    def expected_next_value(self, savings_ratio, beliefs, risky_shares, age, employment=EMPLOYED):
 
-        # beta * E[V(next state)] after saving savings_ratio (a multiple of income, or of wealth for retirees, in
+        # beta * E[V(next state)] after saving savings_ratio (a multiple of the wage, or of wealth for retirees, in
         # which case savings_ratio is 1) and putting the fraction risky_shares of savings in equities
         # Shapes: savings_ratio (n,), beliefs (n, K), risky_shares (n, m). Returns (n, m)
         # The expectation is over next year's regime (given the current belief), returns given that regime
-        # (quadrature nodes), and raises. Next year's belief depends on the returns, but not on the agent's actions
+        # (quadrature nodes), next year's employment status given that regime, and raises.
+        # Next year's belief depends on the returns (and the employment transition), but not on the agent's actions
         hmm, gamma, next_age = self.hmm, self.gamma, age + 1
-        n_regimes = hmm.n_regimes
 
         predicted = hmm.predict(beliefs)  # (n, K): Pr(next year's regime)
-        next_beliefs, _ = hmm.update(beliefs[:, np.newaxis, np.newaxis, :], self.log_return_nodes[np.newaxis])  # (n, K, Q, K)
         safe_return = self.gross_return_nodes[np.newaxis, np.newaxis, :, :, 0]
         risky_return = self.gross_return_nodes[np.newaxis, np.newaxis, :, :, 1]
         alpha = risky_shares[:, :, np.newaxis, np.newaxis]
         portfolio_return = (1 - alpha) * safe_return + alpha * risky_return  # (n, m, K, Q)
         probabilities = predicted[:, np.newaxis, :, np.newaxis] * self.quadrature_weights  # (n, 1, K, Q)
+        beliefs_at_nodes = beliefs[:, np.newaxis, np.newaxis, :]
 
-        if next_age < RETIREMENT_AGE:
-            # Still working next year: V = income^(1 - gamma) v(wealth / income), and income grows by a factor of 1 + raise
-            growth = 1 + RAISE_RATES
-            next_wealth_ratio = savings_ratio[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * portfolio_return[..., np.newaxis] / growth
-            next_value = self.working_value(next_wealth_ratio, next_beliefs[:, np.newaxis, :, :, np.newaxis, :], next_age)
-            if gamma == 1:
-                next_value = self.value_scale(next_age) * np.log(growth) + next_value
-            else:
-                next_value = growth ** (1 - gamma) * next_value
-            next_value = next_value @ RAISE_RATE_PROBABILITIES  # (n, m, K, Q)
-        else:
-            # Retired next year: V = wealth^(1 - gamma) u(age, belief)
+        if next_age >= RETIREMENT_AGE:
+            # Retired next year: V = wealth^(1 - gamma) u(age, belief). Retirees' employment doesn't matter
+            next_beliefs = self.update_beliefs(beliefs_at_nodes, self.log_return_nodes[np.newaxis])  # (n, K, Q, K)
             next_wealth = savings_ratio[:, np.newaxis, np.newaxis, np.newaxis] * portfolio_return
             coefficient = self.retired_value_coefficient(next_beliefs[:, np.newaxis], next_age)
             if gamma == 1:
@@ -327,9 +436,27 @@ class LifecycleModel:
             else:
                 next_value = np.maximum(next_wealth, TINY) ** (1 - gamma) * coefficient
 
-        return DISCOUNT_FACTOR * np.sum(next_value * probabilities, axis=(2, 3))
+            return DISCOUNT_FACTOR * np.sum(next_value * probabilities, axis=(2, 3))
 
-    def choose_portfolio(self, savings_ratio, beliefs, age):
+        # Still working next year: V = wage^(1 - gamma) v_j'(wealth / wage), where next year's wage is this year's
+        # times a growth factor that depends on the employment transition (and the raise)
+        expected = 0.0
+        for next_employment in range(self.n_employment_states):
+            transition = self.employment_transitions[:, employment, next_employment]  # (K,)
+            next_beliefs = self.update_beliefs(beliefs_at_nodes, self.log_return_nodes[np.newaxis], employment, next_employment)
+            growth, growth_probabilities = self.wage_growth[employment][next_employment]
+            next_wealth_ratio = savings_ratio[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * portfolio_return[..., np.newaxis] / growth
+            next_value = self.working_value(next_wealth_ratio, next_beliefs[:, np.newaxis, :, :, np.newaxis, :], next_age, next_employment)
+            if gamma == 1:
+                next_value = self.value_scale(next_age) * np.log(growth) + next_value
+            else:
+                next_value = growth ** (1 - gamma) * next_value
+            next_value = next_value @ growth_probabilities  # (n, m, K, Q)
+            expected = expected + np.sum(next_value * probabilities * transition[:, np.newaxis], axis=(2, 3))
+
+        return DISCOUNT_FACTOR * expected
+
+    def choose_portfolio(self, savings_ratio, beliefs, age, employment=EMPLOYED):
 
         # The risky share that maximizes the expected continuation value, and the maximized value
         # The objective is concave in the risky share, so search a coarse grid, then twice around the best point
@@ -338,7 +465,7 @@ class LifecycleModel:
         upper = self.risky_share_grid[-1]
 
         for _ in range(3):
-            values = self.expected_next_value(savings_ratio, beliefs, candidates, age)
+            values = self.expected_next_value(savings_ratio, beliefs, candidates, age, employment)
             best_idx = np.argmax(values, axis=1)
             rows = np.arange(savings_ratio.size)
             best_share, best_value = candidates[rows, best_idx], values[rows, best_idx]
@@ -349,16 +476,16 @@ class LifecycleModel:
 
         return best_share, best_value
 
-    def choose_consumption(self, wealth_ratio, beliefs, age):
+    def choose_consumption(self, wealth_ratio, beliefs, age, employment=EMPLOYED):
 
         # Working ages: the consumption fraction (of wealth + income) that maximizes u(consumption) + post-decision value
-        # Everything is in units of income. Returns the fractions and the maximized values
-        resources = wealth_ratio + 1
+        # Everything is in units of the wage. Returns the fractions and the maximized values
+        resources = wealth_ratio + self.income_multipliers[employment]
 
         def best_of(candidates):
             savings_ratio = (1 - candidates) * resources[:, np.newaxis]
             values = self.utility(candidates * resources[:, np.newaxis]) + self.post_decision_value(
-                savings_ratio, beliefs[:, np.newaxis, :], age
+                savings_ratio, beliefs[:, np.newaxis, :], age, employment
             )
             rows, best_idx = np.arange(candidates.shape[0]), np.argmax(values, axis=1)
             return candidates[rows, best_idx], values[rows, best_idx]
@@ -407,64 +534,81 @@ class LifecycleModel:
                 self.retired_value[age] = value.reshape(belief_shape)
 
             else:
-                # Post-decision values on (savings ratio, belief)
+                # Post-decision values on (savings ratio, belief), for every employment status. These must all be
+                # computed before the values, which depend on them
                 savings_mesh = np.repeat(SAVINGS_RATIO_GRID, beliefs.shape[0])
                 belief_mesh = np.tile(beliefs, (SAVINGS_RATIO_GRID.size, 1))
-                _, post_decision = self.choose_portfolio(savings_mesh, belief_mesh, age)
-                self.inverted_post_decision_value[age] = self.invert(post_decision, self.post_decision_scale(age)).reshape(
-                    (SAVINGS_RATIO_GRID.size,) + belief_shape
-                )
+                post_decision_tables = []
+                for employment in range(self.n_employment_states):
+                    _, post_decision = self.choose_portfolio(savings_mesh, belief_mesh, age, employment)
+                    post_decision_tables.append(
+                        self.invert(post_decision, self.post_decision_scale(age)).reshape((SAVINGS_RATIO_GRID.size,) + belief_shape)
+                    )
+                self.inverted_post_decision_value[age] = np.stack(post_decision_tables)
 
                 # Values on (wealth ratio, belief)
                 wealth_mesh = np.repeat(WEALTH_RATIO_GRID, beliefs.shape[0])
                 belief_mesh = np.tile(beliefs, (WEALTH_RATIO_GRID.size, 1))
-                _, value = self.choose_consumption(wealth_mesh, belief_mesh, age)
-                self.inverted_value[age] = self.invert(value, self.value_scale(age)).reshape(
-                    (WEALTH_RATIO_GRID.size,) + belief_shape
-                )
+                value_tables = []
+                for employment in range(self.n_employment_states):
+                    _, value = self.choose_consumption(wealth_mesh, belief_mesh, age, employment)
+                    value_tables.append(self.invert(value, self.value_scale(age)).reshape((WEALTH_RATIO_GRID.size,) + belief_shape))
+                self.inverted_value[age] = np.stack(value_tables)
 
             if verbose and (age % 10 == 0 or age == MAX_AGE):
                 print(f"  solved age {age} ({time.time() - start:.1f}s)")
 
         return self
 
-    def policy(self, wealth, income, beliefs, age):
+    def policy(self, wealth, wage, beliefs, age, employment=None):
 
         # The optimal action at arbitrary states: returns (consumption, risky share), arrays of shape (n,)
-        # Vectorized: wealth and income are arrays of shape (n,), beliefs has shape (n, K), age is a scalar
+        # Vectorized: wealth and wage are arrays of shape (n,), beliefs has shape (n, K), employment is an int array
+        # of shape (n,) (everyone is employed by default), age is a scalar
         if age >= RETIREMENT_AGE:
-            fraction, risky_share, _ = self.retired_policy(beliefs, age)
+            fraction, risky_share = self.retired_policy(beliefs, age)[:2]
             return fraction * wealth, risky_share
 
-        wealth_ratio = wealth / income
-        fraction, _ = self.choose_consumption(wealth_ratio, beliefs, age)
-        risky_share, _ = self.choose_portfolio((1 - fraction) * (wealth_ratio + 1), beliefs, age)
+        employment = np.zeros(wealth.size, dtype=int) if employment is None else np.asarray(employment)
+        consumption, risky_share = np.zeros(wealth.size), np.zeros(wealth.size)
+        for status in np.unique(employment):
+            rows = employment == status
+            wealth_ratio = wealth[rows] / wage[rows]
+            fraction, _ = self.choose_consumption(wealth_ratio, beliefs[rows], age, status)
+            resources = wealth_ratio + self.income_multipliers[status]
+            risky_share[rows], _ = self.choose_portfolio((1 - fraction) * resources, beliefs[rows], age, status)
+            consumption[rows] = fraction * resources * wage[rows]
 
-        return fraction * (wealth + income), risky_share
+        return consumption, risky_share
 
 
 def simulate_lifecycles(model, n_agents, seed):
 
-    # Simulates agents from (INITIAL_WEALTH, INITIAL_INCOME, MIN_AGE) until MAX_AGE. Every agent's initial belief is
-    # the stationary distribution of the regime (they haven't seen any returns yet), and their initial regime is
-    # drawn from it. Returns a DataFrame with one row per agent per age
+    # Simulates agents from (INITIAL_WEALTH, INITIAL_INCOME, MIN_AGE) until MAX_AGE. Every agent starts out employed,
+    # their initial belief is the stationary distribution of the regime (they haven't seen any returns yet), and
+    # their initial regime is drawn from it. Returns a DataFrame with one row per agent per age
     rng = np.random.default_rng(seed)
     hmm = model.hmm
 
     wealth = np.full(n_agents, INITIAL_WEALTH, dtype=float)
-    income = np.full(n_agents, INITIAL_INCOME, dtype=float)
+    wage = np.full(n_agents, INITIAL_INCOME, dtype=float)
+    employment = np.full(n_agents, EMPLOYED)
     beliefs = np.tile(hmm.initial_distribution, (n_agents, 1))
     regime = rng.choice(hmm.n_regimes, size=n_agents, p=hmm.initial_distribution)
     rows = []
 
     for age in AGE_GRID:
-        consumption, risky_share = model.policy(wealth, income, beliefs, age)
+        working = age < RETIREMENT_AGE
+        income = model.income_multipliers[employment] * wage if working else np.zeros(n_agents)
+        consumption, risky_share = model.policy(wealth, wage, beliefs, age, employment)
         consumption = np.minimum(consumption, wealth + income)
         record = {
             "agent": np.arange(n_agents),
             "age": age,
             "wealth": wealth,
+            "wage": wage if working else np.zeros(n_agents),
             "income": income,
+            "unemployed": (employment == UNEMPLOYED) if working else np.zeros(n_agents, dtype=bool),
             "consumption": consumption,
             "consumption_fraction": consumption / (wealth + income),
             "risky_share": risky_share,
@@ -477,32 +621,42 @@ def simulate_lifecycles(model, n_agents, seed):
         if age == MAX_AGE:
             break
 
-        # Next year's regime, returns, belief, wealth and income
+        # Next year's regime, returns, employment status, wage, wealth and belief
         next_regime = (rng.uniform(size=n_agents)[:, np.newaxis] > np.cumsum(hmm.transition_matrix[regime], axis=1)).sum(axis=1)
         log_returns = hmm.simulate_log_returns(next_regime, rng)
         gross_returns = np.exp(log_returns)
         portfolio_return = (1 - risky_share) * gross_returns[:, 0] + risky_share * gross_returns[:, 1]
-
         wealth = (wealth + income - consumption) * portfolio_return
+
         if age + 1 >= RETIREMENT_AGE:
-            income = np.zeros(n_agents)
+            beliefs = model.update_beliefs(beliefs, log_returns)
+            employment = np.full(n_agents, EMPLOYED)  # Irrelevant for retirees
         else:
             raise_rate = (rng.uniform(size=n_agents) < RAISE_PROBABILITY) * rng.uniform(MIN_RAISE, MAX_RAISE, size=n_agents)
-            income = income * (1 + raise_rate)
-        beliefs, _ = hmm.update(beliefs, log_returns)
+            next_employment = employment
+            if model.n_employment_states > 1:
+                transition = model.employment_transitions[next_regime, employment]  # (n_agents, J)
+                next_employment = (rng.uniform(size=n_agents)[:, np.newaxis] > np.cumsum(transition, axis=1)).sum(axis=1)
+            stays_employed = (employment == EMPLOYED) & (next_employment == EMPLOYED)
+            reemployed = (employment == UNEMPLOYED) & (next_employment == EMPLOYED)
+            if model.employment is not None:
+                wage = np.where(reemployed, wage * model.employment.reemployment_wage_factor, wage)
+            wage = np.where(stays_employed, wage * (1 + raise_rate), wage)
+            beliefs = model.update_beliefs(beliefs, log_returns, employment, next_employment)
+            employment = next_employment
         regime = next_regime
 
     return pd.concat(rows, ignore_index=True)
 
 
-def risky_share_by_age(model, savings_ratio_by_age, beliefs):
+def risky_share_by_age(model, savings_ratio_by_age, beliefs, employment=EMPLOYED):
 
     # The optimal risky share at every age for a few fixed beliefs, holding savings / income at a given level
     # for each working age (retirees' portfolios don't depend on wealth)
     shares = np.zeros((len(beliefs), AGE_GRID.size - 1))
     for age_idx, age in enumerate(AGE_GRID[:-1]):
         savings_ratio = np.full(len(beliefs), savings_ratio_by_age.get(age, 1.0) if age < RETIREMENT_AGE else 1.0)
-        shares[:, age_idx], _ = model.choose_portfolio(savings_ratio, beliefs, age)
+        shares[:, age_idx], _ = model.choose_portfolio(savings_ratio, beliefs, age, employment)
 
     return shares
 
@@ -514,8 +668,9 @@ def belief_vector(probability_turbulent):
 
 def median_savings_ratio_by_age(df):
 
+    # Savings as a multiple of the wage (which is income, for the employed)
     working = df[df["age"] < RETIREMENT_AGE]
-    savings_ratio = (working["wealth"] + working["income"] - working["consumption"]) / working["income"]
+    savings_ratio = (working["wealth"] + working["income"] - working["consumption"]) / working["wage"]
     return savings_ratio.groupby(working["age"]).median().to_dict()
 
 

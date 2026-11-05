@@ -11,6 +11,7 @@ The Python code uses [uv](https://docs.astral.sh/uv/) to manage dependencies
 uv run python cake_eating.py
 uv run python consumption_savings.py
 uv run python consumption_portfolio_hmm.py
+uv run python consumption_portfolio_unemployment.py
 uv run python windy_gridworld.py
 ```
 
