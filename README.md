@@ -10,11 +10,16 @@ The Python code uses [uv](https://docs.astral.sh/uv/) to manage dependencies
 ```bash
 uv run python cake_eating.py
 uv run python consumption_savings.py
+uv run python consumption_portfolio_hmm.py
 uv run python windy_gridworld.py
 ```
 
 The first `uv run` creates a virtual environment and installs the locked dependencies.
-The scripts save their plots to [python/plots](python/plots).
+The scripts save their plots to [python/plots](python/plots). To run the tests:
+
+```bash
+uv run pytest
+```
 
 # Cake Eating Problem
 

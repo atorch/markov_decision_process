@@ -67,6 +67,7 @@ TINY = 1e-12
 # Ways of extending this problem and making it more interesting:
 #  Investment: allow the agent to choose between putting savings in a bank (safe, low interest rate) and in equities (higher expected return, but some volatility)
 #   See how optimal investment changes with age -- expect agent to put more of their savings in equities when young
+#   (Done in consumption_portfolio_hmm.py, where equity and bond returns follow a hidden Markov model)
 #  Home ownership
 #  Non-deterministic lifespan :-)
 #  Probability of unemployment (downside income risk is what drives precautionary saving, see Carroll's lecture notes)
