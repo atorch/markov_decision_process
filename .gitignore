@@ -1,2 +1,6 @@
 tags
 *~
+*png
+*csv
+.venv/
+__pycache__/
