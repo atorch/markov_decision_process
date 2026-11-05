@@ -11,6 +11,7 @@ The Python code uses [uv](https://docs.astral.sh/uv/) to manage dependencies
 uv run python cake_eating.py
 uv run python consumption_savings.py
 uv run python consumption_portfolio_hmm.py
+uv run python consumption_portfolio_unemployment.py
 uv run python windy_gridworld.py
 ```
 
@@ -237,8 +238,98 @@ Checks (`uv run pytest`):
   [consumption_savings.py](python/consumption_savings.py) (consumption within about 1% everywhere), even though it's solved on a different state space.
 * With log utility, retirees' portfolios are myopic (they maximize E[ln(portfolio return)] over next year), and they consume 1 / (1 + β + β<sup>2</sup> + ...) of their wealth.
 * One year before death, retirees' portfolios are myopic for any risk aversion.
+* Unemployment risk: employment transition matrices are valid, and the regime-independent version has the same long run unemployment
+  rate; the joint stationary distribution of (regime, employment) matches a long simulation; the filter with employment is Bayes' rule on
+  the joint likelihood, and a job loss raises Pr(turbulent); unemployment risk lowers values (unemployed < employed < no risk) and
+  makes employed workers save more; and simulated transitions, incomes and wages match the model.
 * The HMM's forward-backward algorithm matches brute force enumeration of every regime path, a riskless asset doesn't
   change the filter, EM recovers the parameters of simulated data, and a 1-regime HMM is the i.i.d. Gaussian MLE (the same sanity check as in finance_playground).
+
+## Unemployment risk, and job losses that cluster in turbulent markets
+
+So far, young workers hold 100% equities because their future income is a big, safe, bond-like asset.
+What if it isn't safe? [consumption_portfolio_unemployment.py](python/consumption_portfolio_unemployment.py) adds unemployment risk
+(it solves 10 models and takes about 40 minutes; `--markets bank` takes about 3):
+
+* **Employment is a Markov chain.** Every year an employed worker loses their job with a separation probability, and an
+  unemployed worker finds one with a job finding probability. Both can depend on the hidden regime of the year in which
+  the transition happens, the same regime that drives that year's returns. So job losses can cluster in turbulent markets.
+* **Which wage when the worker finds a new job?** The worker's wage is frozen while they're unemployed (no raises), they
+  receive 40% of it in benefits, and when they find a job they get it back minus a 10% "scar" (25% in the severe
+  scenario), as in the displaced worker literature (Jacobson, LaLonde and Sullivan 1993; Davis and von Wachter 2011).
+  Every change in income is a multiplication, so homotheticity survives, and the working-age state is just (wealth / wage,
+  employment status, belief). Going back to the initial career wage would break that (the wage level would be a state variable).
+* **A job loss is news.** The agent observes their own employment status, and when job losses are more likely in
+  turbulent years, losing a job is evidence that the market is turbulent. The filter uses it: Bayes' rule on the joint
+  likelihood of returns and the employment transition. In the severe scenario, a job loss multiplies the odds that the
+  current year is turbulent by 0.12 / 0.02 = 6.
+
+Five scenarios, for each market:
+
+| scenario | unemployment rate, calm years | unemployment rate, turbulent years | scar |
+|---|---|---|---|
+| no unemployment risk | 0 | 0 | |
+| moderate, higher when turbulent | 4.9% | 8.5% | 10% |
+| moderate, independent of regime | 6.0% | 5.9% | 10% |
+| severe, higher when turbulent | 3.9% | 19.6% | 25% |
+| severe, independent of regime | 8.3% | 8.1% | 25% |
+
+(simulated unemployment rates of workers). The "independent of regime" versions use the same transition probabilities
+in every regime, calibrated so that the long run unemployment rate and the frequency of job losses are exactly the same
+as in the "higher when turbulent" version (6.1% and 8.7%). Comparing the two isolates the effect of _when_ job losses happen.
+
+![Equity share by age with unemployment risk](python/plots/portfolio_unemployment_risky_share_by_age.png)
+
+The optimal equity share of an employed worker, with savings held at the same level (the no-unemployment-risk median
+for each age) in every scenario, so the lines only differ because the policy differs.
+
+![Lifecycles with unemployment risk](python/plots/portfolio_unemployment_lifecycle.png)
+
+| | no risk | moderate, independent | moderate, higher when turbulent | severe, independent | severe, higher when turbulent |
+|---|---|---|---|---|---|
+| **Bank and equities** | | | | | |
+| glide path starts, Pr(turbulent) = 0.1 | 56 | 56 | 56 | 55 | 53 |
+| glide path starts, Pr(turbulent) = 0.5 | 51 | 50 | 49 | 48 | 45 |
+| glide path starts, Pr(turbulent) = 0.9 | 45 | 44 | 43 | 42 | 39 |
+| median wealth at 40 (initial incomes) | 1.3 | 3.0 | 3.0 | 5.1 | 5.6 |
+| mean equity share, ages 25-34 | 1.00 | 0.99 | 0.99 | 0.99 | 0.97 |
+| mean equity share, ages 45-54 | 0.94 | 0.87 | 0.86 | 0.73 | 0.63 |
+| mean Pr(turbulent): employed / unemployed workers | 0.29 / - | 0.28 / 0.29 | 0.28 / 0.42 | 0.28 / 0.29 | 0.25 / 0.68 |
+| mean equity share: employed / unemployed workers | 0.87 / - | 0.84 / 0.80 | 0.84 / 0.72 | 0.78 / 0.74 | 0.74 / 0.48 |
+| **Bonds and equities** | | | | | |
+| glide path starts, Pr(turbulent) = 0.1 | 55 | 55 | 54 | 54 | 51 |
+| glide path starts, Pr(turbulent) = 0.5 | 48 | 47 | 46 | 45 | 40 |
+| glide path starts, Pr(turbulent) = 0.9 | 39 | never 100% | never 100% | 36 | never 100% |
+| mean equity share, ages 25-34 | 1.00 | 0.95 | 0.94 | 0.94 | 0.89 |
+| mean equity share, ages 45-54 | 0.88 | 0.80 | 0.78 | 0.66 | 0.58 |
+| mean equity share: employed / unemployed workers | 0.85 / - | 0.79 / 0.75 | 0.79 / 0.65 | 0.73 / 0.70 | 0.69 / 0.39 |
+
+The glide path starts at the age after the last working age with 100% equities (for an employed worker, with savings at the
+no-risk median). Retirees are the same in every scenario: once retired, employment risk is gone, and their portfolio only depends on their belief.
+
+* **The biggest effect is on saving, not on the portfolio.** Unemployment risk is what drives precautionary saving
+  (as in Carroll's buffer stock model): with the bank, median wealth at 40 is 2.4 times higher with moderate risk and 4 to 4.5
+  times higher with severe risk (2.7 and 4.6 to 5 times with bonds). By retirement, wealth is about the same; workers just save earlier.
+* **Young workers still hold (nearly) 100% equities.** Even severe unemployment risk only takes a modest bite out of
+  lifetime income, so human wealth is still mostly bond-like, and the borrowing constraint still binds. The exception is
+  the bonds market when the worker is nearly sure that the market is turbulent: their small savings are mostly a
+  precautionary buffer that they may need next year, so they invest it like a short horizon investor, and in turbulent
+  years bonds pay more than equities and hedge them. (The stakes are tiny, and the share is sensitive to the exact
+  level of savings, which is why those lines are jagged. They don't change with a finer belief grid or finer wealth and savings grids.)
+* **The glide path starts earlier, and more so when job losses cluster in turbulent markets.** Holding the amount of unemployment
+  risk fixed, making it higher in turbulent years moves the start of the glide path 1 year earlier with moderate risk, and
+  3 years (bank) to 5 years (bonds) earlier with severe risk. Human wealth is then lower exactly when equities do badly, so
+  it's more equity-like, and the worker holds fewer equities to compensate. Along simulated lifecycles, the mean equity share at
+  45-54 falls from 0.94 to 0.86 (moderate) or 0.63 (severe); about 1.5 (moderate) and 10 (severe) percentage points of that is
+  due to the timing of job losses, and the rest to the amount of risk (including the extra savings it causes).
+* **Beliefs matter more, not less.** The gap between the glide paths of an agent who thinks the market is calm and one who
+  thinks it's turbulent widens: with the bank, from 11 years (56 vs 45) without unemployment risk to 14 years (53 vs 39)
+  with severe risk that's higher when turbulent. A turbulent market now means both bad expected returns and a higher chance
+  of losing your job next year.
+* **Unemployed workers are pessimists, and hold fewer equities.** When unemployment is higher in turbulent years, a job
+  loss is news that the market is probably turbulent: the unemployed believe Pr(turbulent) = 0.42 (moderate) or 0.68
+  (severe) on average, against 0.25 to 0.28 for the employed, and they hold far fewer equities (0.48 vs 0.74 in the
+  severe scenario with the bank). When unemployment risk is independent of the regime, the unemployed hold only slightly fewer equities than the employed.
 
 ## Next steps
 
@@ -247,7 +338,8 @@ Checks (`uv run pytest`):
 * **K > 2 regimes.** The code is written for K regimes (the belief grid has K - 1 dimensions), but has only been run with K ≤ 2.
   For K ≥ 3 the product grid over beliefs includes points off the simplex, and the grid grows quickly.
 * **Approximate policy iteration**, as in the model above, with the belief as a feature. Grid-based backward induction won't scale to many regimes or assets.
-* **Income risk correlated with the regime** (unemployment in turbulent years), which would make human wealth more equity-like and change the young agent's portfolio.
+* **Richer unemployment risk.** Unemployment insurance that runs out, a scar that depends on the regime (displaced workers lose more in recessions),
+  or a signal of the aggregate unemployment rate, which would tell the agent much more about the regime than their own employment status does.
 * The consumption-fraction-by-belief table that the script prints is confounded by wealth (agents who believe the market is turbulent have usually just had bad returns), so it's not a clean measure of how beliefs change saving.
 
 # Windy Gridworld

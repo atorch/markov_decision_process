@@ -71,6 +71,7 @@ TINY = 1e-12
 #  Home ownership
 #  Non-deterministic lifespan :-)
 #  Probability of unemployment (downside income risk is what drives precautionary saving, see Carroll's lecture notes)
+#   (Done in consumption_portfolio_hmm.py and consumption_portfolio_unemployment.py, where unemployment can be more likely when equity returns are turbulent)
 
 PLOT_DIR = "plots"
 
