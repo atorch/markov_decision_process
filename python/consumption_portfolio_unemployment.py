@@ -86,8 +86,15 @@ def get_scenarios(market):
 
 def glide_path_start(shares):
 
-    # The first age at which the equity share falls below 99%, for each row of shares (one row per belief)
-    return [int(AGE_GRID[np.argmax(share < 0.99)]) for share in shares]
+    # The age at which the final decline in the equity share starts: the first age after the last working age with
+    # (nearly) 100% equities, for each row of shares (one row per belief). Young workers can hold less than 100% and
+    # then go back up to 100% (in the bonds market, when they're nearly sure that the market is turbulent), so the first
+    # age below 100% isn't the start of the glide path. MIN_AGE if the share is never 100%
+    starts = []
+    for share in shares[:, : RETIREMENT_AGE - MIN_AGE]:
+        full = np.flatnonzero(share >= 0.99)
+        starts.append(int(AGE_GRID[full.max() + 1]) if full.size else MIN_AGE)
+    return starts
 
 
 def summarize(market, results, savings_ratio):
