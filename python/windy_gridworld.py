@@ -492,8 +492,15 @@ class WindyGridworld:
             ):
 
                 actions_x, actions_y = list(zip(*alternate_optimal_actions))
+
+                # Note: there can be more than one alternate optimal action at a location,
+                #  and quiver needs one (x, y) position per arrow
+                n_actions = len(alternate_optimal_actions)
                 ax.quiver(
-                    location_with_ties[0], location_with_ties[1], actions_x, actions_y
+                    [location_with_ties[0]] * n_actions,
+                    [location_with_ties[1]] * n_actions,
+                    actions_x,
+                    actions_y,
                 )
 
         plt.xlabel("x")
