@@ -52,6 +52,9 @@ SEVERE_REEMPLOYMENT_WAGE_FACTOR = 0.75
 PROBABILITY_TURBULENT = [0.1, 0.5, 0.9]
 MAX_PLOT_AGE = 72
 
+# Employment status, in the panels that split workers by it (a different pair of hues from the scenarios)
+EMPLOYED_COLOR, UNEMPLOYED_COLOR = "#1baf7a", "#e87ba4"
+
 AGE_GROUPS = ([MIN_AGE - 1, 34, 44, 54, 64, MAX_AGE - 1], ["25-34", "35-44", "45-54", "55-64", "65-84"])
 
 
@@ -166,11 +169,13 @@ def save_lifecycle_plot(all_results, outfile="portfolio_unemployment_lifecycle.p
             if scenario.employment is not None and np.ptp(scenario.employment.separation_probabilities) > 0:
                 working = df[df["age"] < RETIREMENT_AGE]
                 severity = scenario.name.split(",")[0]
-                for unemployed, color in [(False, CALM_COLOR), (True, TURBULENT_COLOR)]:
+                for unemployed, color in [(False, EMPLOYED_COLOR), (True, UNEMPLOYED_COLOR)]:
                     subset = working[working["unemployed"] == unemployed].groupby("age")
                     label = f"{severity}: {'unemployed' if unemployed else 'employed'}"
-                    row[2].plot(subset["belief_turbulent"].mean(), color=color, linestyle=scenario.linestyle, label=label)
-                    row[3].plot(subset["risky_share"].mean(), color=color, linestyle=scenario.linestyle, label=label)
+                    # Markers on the unemployed lines, so the two statuses don't rely on color alone
+                    marker = {"marker": "o", "markersize": 4, "markevery": 4} if unemployed else {}
+                    for ax, column in [(row[2], "belief_turbulent"), (row[3], "risky_share")]:
+                        ax.plot(subset[column].mean(), color=color, linestyle=scenario.linestyle, label=label, **marker)
 
         row[0].set_title(f"{name}: median wealth", loc="left")
         row[0].set_ylim(bottom=0)
@@ -181,12 +186,13 @@ def save_lifecycle_plot(all_results, outfile="portfolio_unemployment_lifecycle.p
         row[3].set_title(f"{name}: mean equity share, workers", loc="left")
         row[3].set_ylim(-0.02, 1.02)
         for ax in row:
-            shade_retirement(ax)
             ax.set_xlabel("age")
+        for ax in row[:2]:
+            shade_retirement(ax)
         for ax in row[2:]:
-            ax.set_xlim(MIN_AGE, RETIREMENT_AGE)
+            ax.set_xlim(MIN_AGE, RETIREMENT_AGE - 1)
 
-    axes[0][0].legend(loc="upper left")
+    axes[0][1].legend(loc="lower left")
     axes[0][2].legend(loc="upper left")
     fig.suptitle(
         "Simulated lifecycles. Right two panels: scenarios where unemployment is higher in turbulent years, employed vs unemployed workers",
